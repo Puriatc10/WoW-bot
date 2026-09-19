@@ -1,234 +1,120 @@
-# WoW-Bot Implementation Roadmap
+# WoW-Bot Implementation Roadmap — Reviewer-Oriented Frozen Specification
 
-> **Project:** WoW-Bot — Research prototype for game bot architecture study
-> **Approach:** Mock-First; dry-run by default; real-input integration is restricted to isolated lab validation
-> **Target Runtime:** Python 3.12+, asyncio
-> **LLM Runtime:** Ollama + Qwen 2.5 7B (local)
-> **Last Updated:** 2026-09-19
-
-> **Scope boundary:** This roadmap is for an academic research prototype. Development and evaluation before Phase 9 use synthetic/mock inputs. Any Phase 9 validation must use prerecorded screenshots, synthetic fixtures, or an isolated lab environment under your control; do not deploy against official game services.
-
-## Source of Truth
-
-- `ROADMAP.md` is authoritative for **task order, dependencies, outputs, and acceptance criteria**.
-- `AGENTS.md` is authoritative for **architecture, contracts, coding rules, safety boundaries, and agent workflow**.
-- If the two files conflict, stop and ask for clarification instead of guessing.
-- Do not silently reinterpret an acceptance criterion. If it is impossible or internally inconsistent, report the issue before changing scope.
-
-## Per-Task Execution Protocol
-
-For every task, the implementing agent must follow this sequence:
-
-1. Read `AGENTS.md` completely, then read this roadmap and the current task.
-2. Inspect the existing implementation and all direct dependencies before editing.
-3. Make the smallest change that satisfies the task; do not refactor unrelated code.
-4. Add or update tests that directly prove the task acceptance criteria and relevant interface/architecture invariants.
-5. Run the narrow tests for the task first, then the canonical project checks (`pytest`, `ruff check`, `mypy --strict`) as applicable.
-6. Verify no unrelated generated/runtime files are staged.
-7. Commit exactly one task-scoped commit unless the repository workflow says otherwise.
-8. Report: files changed, acceptance criteria evidence, commands run, and any remaining risk/blocker.
-
-**Do not start the next task while the current task has failing acceptance criteria.**
+> **Approach:** mock-first, dry-run, simulation/research only  
+> **Runtime:** Python 3.12+, asyncio  
+> **LLM:** local Ollama + Qwen 2.5 7B  
+> **Specification baseline:** frozen through Task 8.3  
+> **Task 9.1:** PENDING  
+> **Validation policy:** Tasks 7.1–8.3 require separate local acceptance.
 
 ---
 
-## 📌 Roadmap Principles
+## How to Read This Roadmap
 
-1. **Each task ≤ 60 minutes of agent work.** If bigger, split it.
-2. **Each task has explicit output file(s).** No ambiguity about what to create.
-3. **Each task has acceptance criteria.** Must be testable and pass/fail.
-4. **Dependencies are explicit.** No ordering by guessing.
-5. **Mock first, real later.** Perception is mocked until Phase 9.
+This document defines **what the repository is expected to implement**.
 
----
+For every task, a reviewer should check:
 
-## 🛠️ Locked Technical Decisions
+1. dependency contract;
+2. required output/module;
+3. frozen behavior;
+4. negative boundaries;
+5. acceptance evidence;
+6. whether validation is agent-executable or local-only.
 
-| Item | Choice |
-|---|---|
-| Language | Python 3.12+ |
-| Concurrency | `asyncio` |
-| LLM Runtime | Ollama + Qwen 2.5 7B |
-| Chaos System | Lorenz attractor (RK4) |
-| Memory Store | SQLite (via `aiosqlite`) |
-| Logging | `loguru` |
-| Config | JSON + Pydantic validation |
-| Package Manager | `uv` |
-| Testing | `pytest` + `pytest-asyncio` |
-| Type Checking | `mypy` (strict mode) |
-| Linting | `ruff` |
+Historical pseudocode that conflicts with the frozen rules below is superseded by this document.
 
 ---
 
-## 📦 Phase 0: Bootstrap
+# Phase 0 — Bootstrap
 
-**Goal:** Project skeleton, dependencies, tooling.
+## Task 0.1 — Project Structure
 
-### Task 0.1 — Project Directory Structure
-**Dependencies:** none
-**Output:** Folder tree under project root.
+**Output:** repository/package/test/script/config skeleton.
 
-```
-wow-bot/
-├── pyproject.toml
-├── README.md
-├── ROADMAP.md
-├── AGENTS.md
-├── .gitignore
-├── .env.example
-├── config/
-│   └── config.json
-├── src/
-│   └── wow_bot/
-│       ├── __init__.py
-│       ├── shared/
-│       ├── internal_dynamics/
-│       ├── strategist/
-│       ├── executor/
-│       ├── perception/
-│       ├── watchdog/
-│       └── mocks/
-├── tests/
-│   ├── unit/
-│   ├── integration/
-│   └── fixtures/
-└── scripts/
-```
+**Review criteria**
 
-**Acceptance Criteria:**
-- All directories created.
-- Every package directory has `__init__.py` (except `tests/`, `scripts/`, `config/`).
-- `README.md` exists with one-line project description and install command.
+- package layout exists;
+- Python package directories have `__init__.py`;
+- docs/config/scripts/tests are separated;
+- no generated runtime artifacts tracked.
 
 ---
 
-### Task 0.2 — `pyproject.toml` Setup
-**Dependencies:** 0.1
+## Task 0.2 — Python Project / Tooling
+
 **Output:** `pyproject.toml`
 
-**Required dependencies:**
-```toml
-[project]
-name = "wow-bot"
-version = "0.1.0"
-requires-python = ">=3.12"
-dependencies = [
-    "openai>=1.50.0",
-    "httpx>=0.27.0",
-    "loguru>=0.7.2",
-    "pydantic>=2.9.0",
-    "pydantic-settings>=2.5.0",
-    "numpy>=2.0.0",
-    "aiosqlite>=0.20.0",
-    "scipy>=1.14.0",
-]
+**Core requirements**
 
-[project.optional-dependencies]
-dev = [
-    "pytest>=8.3.0",
-    "pytest-asyncio>=0.24.0",
-    "pytest-cov>=6.0.0",
-    "ruff>=0.6.0",
-    "mypy>=1.11.0",
-]
+- Python 3.12+;
+- `uv`;
+- OpenAI-compatible client + httpx;
+- Pydantic;
+- NumPy/SciPy;
+- aiosqlite;
+- Loguru;
+- pytest / pytest-asyncio;
+- Ruff;
+- mypy strict.
 
-[tool.pytest.ini_options]
-asyncio_mode = "auto"
-testpaths = ["tests"]
+Phase 8 may add Matplotlib when required. Task 8.3 may add psutil only if no existing resource probe can satisfy process CPU/RSS measurement.
 
-[tool.ruff]
-line-length = 100
-target-version = "py312"
+**Acceptance**
 
-[tool.mypy]
-strict = true
-python_version = "3.12"
-```
-
-**Acceptance Criteria:**
-- `uv sync --all-extras` succeeds without errors.
-- `python -c "import openai, httpx, loguru, pydantic, numpy, aiosqlite, scipy"` runs clean.
+- dependencies resolve;
+- imports work;
+- project tooling commands are defined.
 
 ---
 
-### Task 0.3 — Config File + Settings
-**Dependencies:** 0.2
+## Task 0.3 — Configuration
+
 **Output:** `config/config.json`, `src/wow_bot/shared/config.py`
 
-**`config.json` structure:**
-```json
-{
-  "llm": {
-    "base_url": "http://127.0.0.1:11434/v1/",
-    "api_key": "ollama",
-    "model": "qwen2.5:7b",
-    "timeout_seconds": 60,
-    "max_retries": 3
-  },
-  "internal_dynamics": {
-    "update_interval_ms": 100,
-    "lorenz_sigma": 10,
-    "lorenz_rho": 28,
-    "lorenz_beta": 2.667,
-    "lorenz_dt": 0.001,
-    "trigger_threshold_base": 0.3,
-    "memory_db_path": "data/memory.db"
-  },
-  "executor": {
-    "human_delay_base_ms": 200,
-    "human_delay_sigma_base": 0.4,
-    "dry_run": true
-  },
-  "logging": {
-    "level": "INFO",
-    "log_file": "logs/bot.log",
-    "rotation": "1 day",
-    "retention": "7 days"
-  }
-}
+**Required**
+
+- typed Pydantic settings;
+- local Ollama configuration;
+- Dynamics parameters;
+- memory DB path;
+- executor dry-run defaults;
+- logging configuration;
+- clear validation failures.
+
+**Invariant**
+
+```text
+executor dry-run remains enabled/supported;
+physical execution is not enabled by config.
 ```
-
-**Requirements:**
-- `Settings` class using Pydantic `BaseSettings`.
-- Loads from `config/config.json` by default.
-- `get_settings()` singleton accessor.
-- All fields typed with sensible defaults.
-
-**Acceptance Criteria:**
-- `python -c "from wow_bot.shared.config import get_settings; print(get_settings().llm.model)"` prints `qwen2.5:7b`.
-- Invalid config raises a clear Pydantic error.
 
 ---
 
-### Task 0.4 — Shared Logger
-**Dependencies:** 0.3
+## Task 0.4 — Shared Logger
+
 **Output:** `src/wow_bot/shared/logger.py`
 
-**Requirements:**
-- Wrapper around `loguru`.
-- Console output with colors.
-- File output with daily rotation.
-- Millisecond timestamps.
-- Context tag per module (e.g., `[DYNAMICS]`, `[LLM]`, `[EXEC]`).
-- `get_logger(tag: str)` factory function.
+**Required**
 
-**Acceptance Criteria:**
-```python
-from wow_bot.shared.logger import get_logger
-log = get_logger("DYNAMICS")
-log.info("test")
-```
-- One line printed to console.
-- One line appended to `logs/bot.log`.
+- Loguru wrapper;
+- console + configured file;
+- rotation;
+- millisecond timestamps;
+- tagged loggers;
+- `get_logger(tag)`.
+
+**Invariant**
+
+No secrets/full prompts/raw model responses should be logged unnecessarily.
 
 ---
 
-### Task 0.5 — `.gitignore`
-**Dependencies:** 0.1
-**Output:** `.gitignore`
+## Task 0.5 — `.gitignore`
 
-**Must ignore:**
-```
+Ignore at minimum:
+
+```text
 __pycache__/
 *.py[cod]
 .venv/
@@ -243,766 +129,1050 @@ reports/
 *.db
 ```
 
-**Acceptance Criteria:**
-- `git status` doesn't show `logs/`, `data/`, `__pycache__/`.
+Generated scientific outputs normally remain untracked.
 
 ---
 
-## 🔗 Phase 1: Interfaces & Data Contracts
+# Phase 1 — Shared Contracts
 
-**Goal:** Define `GameState`, `MetaState`, `Strategy`, `Event` as frozen contracts between layers.
+## Task 1.1 — GameState and Subtypes
 
-### Task 1.1 — `GameState` and Sub-types
-**Dependencies:** 0.3
 **Output:** `src/wow_bot/shared/interfaces.py`
 
-**Required classes:**
-```python
-from dataclasses import dataclass, field
-from typing import Optional
+Required conceptual contracts:
 
-@dataclass
-class TargetInfo:
-    name: str
-    hp_pct: float                    # 0..1
-    reaction: str                    # "hostile" | "neutral" | "friendly"
-    distance_estimate: float         # yards, approximate
-
-@dataclass
-class EnemyInfo:
-    bbox: tuple[int, int, int, int]  # x, y, w, h
-    confidence: float                # 0..1
-    distance_estimate: float         # yards, approximate
-
-@dataclass
-class Event:
-    type: str
-    timestamp: float
-    data: dict = field(default_factory=dict)
-
-@dataclass
-class GameState:
-    timestamp: float
-    hp_pct: float
-    mana_pct: float
-    position: tuple[float, float]
-    facing: float
-    in_combat: bool
-    target: Optional[TargetInfo]
-    enemies: list[EnemyInfo]
-    events: list[Event]
+```text
+TargetInfo
+EnemyInfo
+Event
+GameState
 ```
 
-**Acceptance Criteria:**
-- `tests/unit/test_interfaces.py` builds a `GameState` and serializes it to JSON.
-- All type hints pass `mypy --strict`.
+`GameState` fields:
+
+```text
+timestamp
+hp_pct
+mana_pct
+position
+facing
+in_combat
+target
+enemies
+events
+```
+
+**Acceptance**
+
+- valid object construction/serialization;
+- strict typing;
+- normalized percentage fields;
+- no hidden OS/runtime dependency.
 
 ---
 
-### Task 1.2 — `MetaState` and `Strategy`
-**Dependencies:** 1.1
-**Output:** extend `src/wow_bot/shared/interfaces.py`
+## Task 1.2 — MetaState and Strategy
 
-```python
-import numpy as np
+`MetaState`:
 
-@dataclass
-class MetaState:
-    vector: np.ndarray           # shape (5,): [hunger, fatigue, curiosity, aggression, social]
-    recent_events: list[Event]
-    timestamp: float
-
-@dataclass
-class Strategy:
-    goal: str                    # "farm_herbs" | "grind_humans" | "explore" | "flee"
-    region: str
-    risk_tolerance: float        # 0..1
-    priority: list[str]
-    constraints: dict
-    valid_until: float
-    raw_llm_output: str = ""
+```text
+vector shape (5,)
+recent_events
+timestamp
 ```
 
-**Acceptance Criteria:**
-- `Strategy` round-trips through JSON (to/from dict).
-- Pydantic validator enforces `0 <= risk_tolerance <= 1`.
+Canonical vector order:
+
+```text
+[hunger, fatigue, curiosity, aggression, social]
+```
+
+`Strategy`:
+
+```text
+goal
+region
+risk_tolerance
+priority
+constraints
+valid_until
+raw_llm_output = ""
+```
+
+Frozen goal vocabulary:
+
+```text
+farm_herbs
+grind_humans
+explore
+flee
+```
+
+**Acceptance**
+
+- risk tolerance `[0,1]`;
+- vector contract preserved;
+- existing shared fields not removed/renamed.
 
 ---
 
-### Task 1.3 — Event Types Registry
-**Dependencies:** 1.1
-**Output:** `src/wow_bot/shared/events.py`
+## Task 1.3 — Event Registry
 
-**Required constants:**
-```python
-DEATH = "death"
-RARE_LOOT = "rare_loot"
-PVP_HIT = "pvp_hit"
-PVP_KILL = "pvp_kill"
-STUCK = "stuck"
-LEVEL_UP = "level_up"
-QUEST_COMPLETE = "quest_complete"
-NPC_INTERACT = "npc_interact"
+Canonical event types include:
 
-EVENT_EFFECTS = {
-    DEATH:        {"hunger": 0.0,   "fatigue": +0.10, "curiosity": 0.0,   "aggression": -0.15, "social": -0.05},
-    RARE_LOOT:    {"hunger": +0.20, "fatigue": 0.0,   "curiosity": +0.15, "aggression": 0.0,   "social": +0.05},
-    PVP_HIT:      {"hunger": 0.0,   "fatigue": +0.05, "curiosity": -0.05, "aggression": +0.10, "social": -0.10},
-    PVP_KILL:     {"hunger": 0.0,   "fatigue": 0.0,   "curiosity": 0.0,   "aggression": +0.05, "social": +0.05},
-    STUCK:        {"hunger": 0.0,   "fatigue": +0.15, "curiosity": -0.10, "aggression": -0.05, "social": 0.0},
-    LEVEL_UP:     {"hunger": +0.10, "fatigue": -0.10, "curiosity": +0.10, "aggression": +0.05, "social": +0.05},
-    QUEST_COMPLETE: {"hunger": +0.10, "fatigue": -0.05, "curiosity": +0.10, "aggression": 0.0, "social": +0.05},
-    NPC_INTERACT: {"hunger": 0.0,   "fatigue": -0.05, "curiosity": 0.0,   "aggression": 0.0,   "social": +0.15},
-}
+```text
+death
+rare_loot
+pvp_hit
+pvp_kill
+stuck
+level_up
+quest_complete
+npc_interact
 ```
 
-**Acceptance Criteria:**
-- Every event type in `EVENT_EFFECTS`.
-- `mypy --strict` passes.
+Event effects must define all five drive keys.
+
+Reviewer should compare actual values with the committed canonical registry and ensure Dynamics uses that registry rather than duplicating effects.
 
 ---
 
-## 🎭 Phase 2: Mock Perception
+# Phase 2 — Mock Perception
 
-**Goal:** Build a simulator that emits realistic `GameState`, so we can develop all other layers independently.
+## Task 2.1 — Basic MockPerception
 
-### Task 2.1 — Simple Mock Perception
-**Dependencies:** 1.1, 1.3
 **Output:** `src/wow_bot/mocks/mock_perception.py`
 
-**Requirements:**
-- `MockPerception` class with `async def get_state() -> GameState`.
-- HP/Mana fluctuate randomly between 0.3 and 1.0.
-- Random events emitted occasionally.
-- Position follows a slow random walk.
-- `in_combat` toggles True for 10s every ~30s.
+**Required**
 
-**Acceptance Criteria:**
-```python
-async def test():
-    p = MockPerception()
-    for _ in range(10):
-        state = await p.get_state()
-        assert 0 <= state.hp_pct <= 1
-        assert isinstance(state.timestamp, float)
-        await asyncio.sleep(0.1)
+- async `get_state()`;
+- valid bounded `GameState`;
+- synthetic position/events/combat;
+- no external game dependency.
+
+---
+
+## Task 2.2 — Scenario-Driven MockPerception
+
+Canonical scenarios:
+
+```text
+peaceful_farm
+combat_light
+death_loop
+rare_loot_drought
+stuck_repeatedly
 ```
-Runs without error.
+
+**Required**
+
+- scenario selected explicitly;
+- deterministic under seed;
+- scenario events/state transitions support downstream tests.
 
 ---
 
-### Task 2.2 — Scenario-driven Mock Perception
-**Dependencies:** 2.1
-**Output:** extend `mock_perception.py`
+# Phase 3 — Internal Dynamics
 
-**Supported scenarios:**
-- `"peaceful_farm"` — no combat, HP stable.
-- `"combat_light"` — short combats, single enemy.
-- `"death_loop"` — dies every ~2 minutes.
-- `"rare_loot_drought"` — no rare loot events.
-- `"stuck_repeatedly"` — stuck events every few minutes.
+## Task 3.1 — Drives
 
-**Requirements:**
-- Scenario selected via config or constructor arg.
-- Reproducible via seed.
-
-**Acceptance Criteria:**
-- Test runs each scenario for at least 10 frames.
-- All relevant event types appear in respective scenarios.
-
----
-
-## 🧠 Phase 3: Internal Dynamics
-
-**Goal:** Implement the heart of the system — natural variation with pink noise.
-
-### Task 3.1 — Drives Core
-**Dependencies:** 1.2, 1.3
 **Output:** `src/wow_bot/internal_dynamics/drives.py`
 
-**Required API:**
-```python
-class Drives:
-    def __init__(self, config): ...
-    @property
-    def vector(self) -> np.ndarray: ...              # [hunger, fatigue, curiosity, aggression, social]
-    def step(self, dt: float, chaos_component: float) -> None: ...
-    def apply_event(self, event: Event) -> None: ...
-    def decay(self, dt: float) -> None: ...
-```
+Frozen invariants:
 
-**Requirements:**
-- Each drive clamped to `[0, 1]`.
-- Drift rate differs per drive (`fatigue` faster than `social`).
-- Event effects applied immediately, decay slowly to baseline (0.5).
-- Baseline itself can drift subtly over hours (optional, low priority).
-
-**Acceptance Criteria:**
-- Start all drives at 0.5, run 1000 steps with no events, all stay in `[0, 1]`.
-- Emit `death` event → `aggression` drops immediately, recovers slowly over ~10 minutes of simulated time.
+- vector shape `(5,)`;
+- `float64`;
+- baseline `0.5`;
+- bounded `[0,1]`;
+- fatigue drifts faster than social;
+- chaos scalar may perturb drift subtly;
+- event effects use shared registry;
+- decay toward baseline;
+- caller cannot mutate internal vector through returned reference.
 
 ---
 
-### Task 3.2 — Coupled Oscillators
-**Dependencies:** 3.1
-**Output:** `src/wow_bot/internal_dynamics/oscillators.py`
+## Task 3.2 — Oscillator Bank
 
-**Required API:**
-```python
-class OscillatorBank:
-    def __init__(self, config): ...
-    def step(self, dt: float) -> float: ...          # sum of all oscillators
-    @property
-    def frequencies(self) -> list[float]: ...
-    @property
-    def phases(self) -> list[float]: ...
+**Output:** oscillator module
+
+Frozen periods:
+
+```text
+5 hours
+90 minutes
+20 minutes
+5 minutes
+1 minute
 ```
 
-**Requirements:**
-- 5 oscillators with incommensurable frequencies (Hz): `1/18000, 1/5400, 1/1200, 1/300, 1/60`.
-- Amplitudes: `[0.15, 0.08, 0.05, 0.03, 0.01]`.
-- Initial phases from config or seed.
-- Output sum bounded to `[-0.3, +0.3]`.
+Amplitudes:
 
-**Acceptance Criteria:**
-- After 10,000 steps, FFT of output resembles 1/f spectrum.
-- Max absolute value never exceeds 0.35.
+```text
+0.15
+0.08
+0.05
+0.03
+0.01
+```
+
+**Required**
+
+- seeded local RNG phases;
+- deterministic when seeded;
+- bounded combined output;
+- no false claim that this component alone guarantees a 1/f process.
 
 ---
 
-### Task 3.3 — Lorenz Attractor
-**Dependencies:** 0.3
-**Output:** `src/wow_bot/internal_dynamics/chaos.py`
+## Task 3.3 — Lorenz Attractor
 
-**Required API:**
-```python
-class LorenzAttractor:
-    def __init__(self, sigma=10, rho=28, beta=2.667, dt=0.001): ...
-    def step(self) -> np.ndarray: ...                # returns new (x, y, z)
-    def normalized(self) -> float: ...               # in [-1, +1]
-```
+**Output:** Lorenz/chaos module
 
-**Requirements:**
-- Use **RK4** integration (not Euler).
-- Initial condition: `(1.0, 1.0, 1.0)` or from seed.
-- Normalize: `(x - mean_x) / std_x` approximate.
+**Required**
 
-**Acceptance Criteria:**
-- After 1000 steps, no NaN or Inf.
-- Trajectory remains bounded in phase space.
-- Two initial conditions differing by 0.001 diverge after 1000 steps (chaos signature).
+- canonical Lorenz equations;
+- RK4, not Euler;
+- float64;
+- default/frozen `dt` around `0.001`;
+- deterministic;
+- finite/bounded expected trajectory;
+- fixed deterministic projection/normalization;
+- no unstable online normalization that changes semantics unpredictably.
 
 ---
 
-### Task 3.4 — Memory Store (SQLite)
-**Dependencies:** 1.1
+## Task 3.4 — Memory Store
+
 **Output:** `src/wow_bot/internal_dynamics/memory.py`
 
-**Required API:**
-```python
-class MemoryStore:
-    def __init__(self, db_path: str): ...
-    async def init(self) -> None: ...
-    async def add(self, event: Event, state_vector: np.ndarray) -> None: ...
-    async def recall_similar(self, state: np.ndarray, k: int = 5) -> list[Event]: ...
-    async def decay_old(self, max_age_hours: float = 72) -> None: ...
-    async def close(self) -> None: ...
+**Required**
+
+- async SQLite / aiosqlite;
+- explicit init/close;
+- safe float64 vector storage;
+- JSON event data;
+- deterministic Euclidean recall/ties;
+- decay/removal of old records;
+- no pickle.
+
+---
+
+## Task 3.5 — MetaState Generator
+
+**Output:** `meta_state.py`
+
+Frozen step order:
+
+```text
+chaos
+→ oscillators
+→ drives.step
+→ apply GameState events
+→ drives.decay
+→ persist important events
+→ build MetaState
 ```
 
-**SQLite schema:**
-```sql
-CREATE TABLE memories (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    event_type TEXT NOT NULL,
-    timestamp REAL NOT NULL,
-    state_vector BLOB NOT NULL,
-    data TEXT
-);
-CREATE INDEX idx_event_type ON memories(event_type);
-CREATE INDEX idx_timestamp ON memories(timestamp);
+`MetaState.vector` remains the drives vector.
+
+No LLM call occurs here.
+
+---
+
+## Task 3.6 — Adaptive Trigger
+
+Threshold:
+
+```text
+threshold(t) = base + 0.1*sin(2π*t/7200)
 ```
 
-**Acceptance Criteria:**
-- Store event with vector `[0.5]*5`, recall with `[0.51]*5` → returns it.
-- `decay_old` removes events older than threshold.
-- All operations async-safe.
+- simulated elapsed time;
+- strict trigger comparison `norm(delta) > threshold`;
+- no wall-clock dependency.
 
 ---
 
-### Task 3.5 — MetaState Generator
-**Dependencies:** 3.1, 3.2, 3.3, 3.4
-**Output:** `src/wow_bot/internal_dynamics/meta_state.py`
+## Task 3.7 — Spectrum Integration Test
 
-**Required API:**
-```python
-class MetaStateGenerator:
-    def __init__(self, config, drives, oscillators, chaos, memory): ...
-    async def step(self, dt: float, game_state: GameState) -> MetaState: ...
-    def should_trigger_llm(self, current: MetaState, last: MetaState) -> bool: ...
-```
+**Required**
 
-**Algorithm:**
-1. `chaos.step()` → scalar
-2. `oscillators.step(dt)` → scalar
-3. `drives.step(dt, chaos_val)`
-4. For each event in `game_state.events`: `drives.apply_event(event)`
-5. `drives.decay(dt)`
-6. `memory.add()` for important events
-7. Build `MetaState` from `drives.vector`
-8. Trigger check: `norm(current - last) > adaptive_threshold`
+- actual MetaState output;
+- sufficiently long deterministic series;
+- Welch PSD;
+- per-drive log-log slope;
+- scientific target `[-1.5, -0.5]`.
 
-**Acceptance Criteria:**
-- 100 steps at `dt=0.1`: MetaState vector always in `[0,1]^5`.
-- Emit `death` → visible vector shift.
-- `should_trigger_llm`: large change → True, small change → False.
+**Important**
+
+Do not change Dynamics only to force a statistical test to pass without first establishing that the analysis is valid.
 
 ---
 
-### Task 3.6 — Adaptive Trigger Threshold
-**Dependencies:** 3.5
-**Output:** extend `meta_state.py`
+# Phase 4 — Strategist
 
-**Requirements:**
-- Threshold not constant; follows a slow oscillator.
-- `threshold = 0.3 + 0.1 * sin(2π * t / 7200)` (2-hour period).
+## Task 4.1 — Local LLM Client
 
-**Acceptance Criteria:**
-- Over 2 simulated hours (72,000 steps at `dt=0.1`), threshold passes through `[0.2, 0.4]` at least once.
-
----
-
-### Task 3.7 — Spectrum Analysis Test
-**Dependencies:** 3.5
-**Output:** `tests/integration/test_spectrum.py`
-
-**Requirements:**
-- Run 10,000 steps of `MetaStateGenerator`.
-- FFT of each drive's time series.
-- Compute PSD via `scipy.signal.welch`.
-- Fit slope on log-log plot.
-
-**Acceptance Criteria:**
-- Slope in `[-1.5, -0.5]` (close to 1/f).
-- Test fails if outside range.
-
----
-
-## 🎯 Phase 4: Strategist Layer
-
-**Goal:** Connect to local LLM, design effective prompts.
-
-### Task 4.1 — LLM Client
-**Dependencies:** 0.3
 **Output:** `src/wow_bot/strategist/llm_client.py`
 
-**Required API:**
-```python
-class LLMClient:
-    def __init__(self, config): ...
-    async def query(self, system_prompt: str, user_prompt: str) -> str: ...
-    async def health_check(self) -> bool: ...
-```
+**Required**
 
-**Requirements:**
-- Use `openai.AsyncOpenAI` with `http_client=httpx.AsyncClient(trust_env=False)`.
-- Timeout from config.
-- Retry up to 3 times with exponential backoff.
-- Log every call: prompt length, response time, token count.
-
-**Acceptance Criteria:**
-- `health_check()` returns True with running Ollama.
-- `query("You are helpful.", "Say hi")` returns a string.
+- `openai.AsyncOpenAI`;
+- `httpx.AsyncClient(trust_env=False)`;
+- local endpoints only;
+- timeout from config;
+- SDK retries disabled if custom retries own policy;
+- bounded custom transient retries;
+- cancellation propagation;
+- lifecycle close;
+- no prompt/response/key logging.
 
 ---
 
-### Task 4.2 — Prompt Templates
-**Dependencies:** 4.1
-**Output:** `src/wow_bot/strategist/prompts.py`
+## Task 4.2 — Prompt Construction
 
-**Required:**
-- `SYSTEM_PROMPT`: persistent player persona (constant).
-- `build_user_prompt(meta_state, recent_events, previous_strategy) -> str`.
+**Output**
 
-**System Prompt template:**
-```
-You are roleplaying as a casual World of Warcraft player with these persistent traits:
-- You sometimes get distracted and lose focus
-- When tired, you make riskier decisions
-- You enjoy fighting groups of enemies
-- When low on gold, you become greedy
-- You get bored of repetitive patterns quickly
-- You speak only in JSON when asked for a strategy
-
-Your job is NOT to make moment-to-moment decisions.
-Your job is to define a HIGH-LEVEL strategy for the next 20-40 minutes.
-Another system will execute your strategy using fast local decisions.
+```text
+src/wow_bot/strategist/prompts.py
+src/wow_bot/strategist/system_prompt.txt
 ```
 
-**User Prompt template:**
-```
-[INTERNAL STATE]
-hunger: {hunger:.2f}
-fatigue: {fatigue:.2f}
-curiosity: {curiosity:.2f}
-aggression: {aggression:.2f}
-social: {social:.2f}
+Expected API:
 
-[RECENT EVENTS]
-{events_list}
-
-[PREVIOUS STRATEGY]
-Goal: {prev_goal}
-Region: {prev_region}
-Risk tolerance: {prev_risk}
-
-[YOUR TASK]
-Produce a NEW strategy that EVOLVES from the previous one.
-Do not start from scratch.
-Respond ONLY with valid JSON in this exact schema:
-{
-  "goal": "string",
-  "region": "string",
-  "risk_tolerance": 0.0-1.0,
-  "priority": ["string", ...],
-  "constraints": {"max_deaths_per_hour": int},
-  "reasoning": "one short sentence"
-}
+```text
+load_system_prompt()
+DynamicContext
+build_user_prompt(meta_state, dynamic_context)
 ```
 
-**Acceptance Criteria:**
-- `build_user_prompt` returns a string containing all required sections.
-- Sample MetaState produces prompt with all fields filled.
+`DynamicContext` carries explicit:
+
+```text
+now
+session_start
+available_regions
+previous_strategy
+timezone
+is_weekend
+sleep_window
+```
+
+**Purity**
+
+- no network;
+- no DB;
+- no LLM;
+- no random;
+- no wall-clock read.
+
+Prompt output contract contains:
+
+```text
+reasoning
+goal
+region
+risk_tolerance
+priority
+constraints
+```
 
 ---
 
-### Task 4.3 — Response Parser + Validator
-**Dependencies:** 4.2, 1.2
-**Output:** `src/wow_bot/strategist/parser.py`
+## Task 4.3 — Strict Strategy Parser
 
-**Required API:**
-```python
-def parse_strategy(raw: str) -> Strategy:
-    """Build a Strategy from raw LLM output."""
+**Output:** parser module
+
+Frozen API semantics:
+
+```text
+parse raw response + explicit valid_until → Strategy
 ```
 
-**Requirements:**
-- Clean markdown fences (` ```json ... ``` `).
-- Find first `{` and last `}` to extract JSON.
-- Validate with Pydantic.
-- On failure: return a default fallback Strategy.
-- Set `valid_until = time.time() + 30*60`.
+**Required**
 
-**Acceptance Criteria:**
-- Handles: pure JSON, JSON in markdown fence, JSON with leading/trailing text, incomplete JSON (→ fallback).
-- No exceptions in any case.
+- strict JSON fields;
+- reasoning diagnostic only;
+- narrow full-response fenced-JSON recovery;
+- reject extra/missing fields;
+- reject NaN/Infinity;
+- reject bool masquerading as numbers/ints;
+- validate supported constraints;
+- no silent coercion/repair;
+- no LLM retry;
+- failures raise narrow parser error;
+- `valid_until` is explicit; no wall-clock read.
+
+Historical "return default Strategy on any parser failure" behavior is superseded.
 
 ---
 
-### Task 4.4 — Strategist Orchestrator
-**Dependencies:** 4.1, 4.2, 4.3
-**Output:** `src/wow_bot/strategist/orchestrator.py`
+## Task 4.4 — Strategist Orchestrator
 
-**Required API:**
-```python
-class Strategist:
-    def __init__(self, config, llm_client, memory): ...
-    async def generate_strategy(self, meta_state: MetaState) -> Strategy: ...
-    @property
-    def current_strategy(self) -> Strategy | None: ...
-    def is_expired(self) -> bool: ...
+Expected surface:
+
+```text
+generate_strategy(meta_state, dynamic_context)
+current_strategy
+is_expired(now)
 ```
 
-**Acceptance Criteria:**
-- With sample MetaState, returns valid Strategy.
-- On LLM timeout, falls back to previous strategy.
+**Frozen behavior**
+
+- validate explicit context;
+- build prompts;
+- compute explicit validity;
+- one logical query;
+- parse strictly;
+- on success replace current Strategy;
+- expected transport/parser failure + previous Strategy → return exact same previous object unchanged;
+- no previous Strategy → propagate;
+- cancellation/programming errors propagate;
+- no orchestrator retry;
+- explicit generate means replan even if previous Strategy was not expired.
 
 ---
 
-## ⚡ Phase 5: Executor Layer
+# Phase 5 — Executor / Simulation
 
-**Goal:** Convert Strategy to real keyboard/mouse actions with human-like timing.
+## Task 5.1 — Dry-Run Controller
 
-### Task 5.1 — Controller Base
-**Dependencies:** 0.2
 **Output:** `src/wow_bot/executor/controller.py`
 
-**Required API:**
-```python
-class Controller:
-    async def press_key(self, key: str, duration_ms: int = 50) -> None: ...
-    async def move_mouse(self, x: int, y: int) -> None: ...
-    async def click(self, button: str = "left") -> None: ...
-    async def stop_all(self) -> None: ...
+Expected API:
+
+```text
+press_key
+move_mouse
+click
+stop_all
+commands
 ```
 
-**Requirements:**
-- Use `pynput` or `pyautogui`.
-- **Dry-run mode** via config flag: log actions without executing.
+**Frozen boundary**
 
-**Acceptance Criteria:**
-- `dry_run=True`: no actual input, but logs produced.
-- `dry_run=False` on Notepad: text is typed.
+- `dry_run=True` only;
+- `dry_run=False` rejected;
+- no physical input libraries;
+- immutable/deterministic command records;
+- no wall-clock/random IDs;
+- `stop_all` safely resets simulated held state;
+- no FSM/Strategy/Perception coupling.
+
+Historical real-input/Notepad acceptance is superseded.
 
 ---
 
-### Task 5.2 — Human-like Timing
-**Dependencies:** 5.1, 3.1
-**Output:** `src/wow_bot/executor/humanize.py`
+## Task 5.2 — Stochastic Timing/Error Simulation
 
-**Required API:**
-```python
-def human_delay(base_ms: int = 200, fatigue: float = 0.5, 
-                chaos_component: float = 0.0) -> float:
-    """Log-normal delay correlated with fatigue."""
+**Output:** `humanize.py`
 
-def human_error_probability(drives_vector: np.ndarray) -> float:
-    """Error probability correlated with fatigue and boredom."""
+Timing:
 
-def jitter_coordinates(x: int, y: int, radius: int = 5) -> tuple[int, int]:
-    """Random jitter for clicks."""
+```text
+sigma = 0.4 + 0.2*chaos_component + 0.3*fatigue
+mu = log(base_ms)
+delay = clip(LogNormal(mu, sigma), 50, 2000)
 ```
 
-**Implementation:**
-```python
-sigma = 0.4 + 0.2 * chaos_component + 0.3 * fatigue
-mu = np.log(base_ms)
-delay = np.clip(np.random.lognormal(mu, sigma), 50, 2000)
+Error probability:
+
+```text
+0.02 + 0.05*fatigue + 0.03*(1-curiosity)
 ```
 
-**Acceptance Criteria:**
-- 1000 `human_delay` calls: distribution is log-normal (KS test p > 0.05).
-- Mean within `[150, 300]` for `base_ms=200`.
-- `human_error_probability` in `[0.02, 0.15]`.
+Jitter:
+
+```text
+uniform integer dx/dy in [-radius, +radius]
+```
+
+**Required**
+
+- no sleep;
+- no Controller;
+- injectable RNG;
+- no global seed;
+- strict validation;
+- vector shape exactly `(5,)`;
+- actual error range `[0.02,0.10]`;
+- statistical tests scientifically account for clipping.
 
 ---
 
-### Task 5.3 — FSM Core
-**Dependencies:** 5.1, 5.2, 1.2
-**Output:** `src/wow_bot/executor/fsm.py`
+## Task 5.3 — Deterministic Executor FSM
 
-**Required API:**
-```python
-class State(Enum):
-    IDLE = auto()
-    SCANNING = auto()
-    MOVING_TO_TARGET = auto()
-    COMBAT = auto()
-    LOOTING = auto()
-    FLEEING = auto()
-    STUCK_RECOVERY = auto()
+States exactly:
 
-class ExecutorFSM:
-    def __init__(self, config, controller, strategy): ...
-    async def tick(self, game_state: GameState) -> None: ...
-    def set_strategy(self, strategy: Strategy) -> None: ...
+```text
+IDLE
+SCANNING
+MOVING_TO_TARGET
+COMBAT
+LOOTING
+FLEEING
+STUCK_RECOVERY
 ```
 
-**Requirements:**
-- Transition rules parameterized by strategy (e.g., `risk_tolerance` affects FLEE threshold).
-- Every transition logged.
-- `STUCK_RECOVERY` auto-triggered if same action repeats for 5s.
+Initial:
 
-**Acceptance Criteria:**
-- With MockPerception, FSM transitions correctly in each scenario.
-- `risk_tolerance=0.9` → later FLEE; `risk_tolerance=0.1` → earlier FLEE.
-
----
-
-### Task 5.4 — Idle Behaviors
-**Dependencies:** 5.3
-**Output:** `src/wow_bot/executor/idle_behaviors.py`
-
-**Required behaviors:**
-- Camera rotation without purpose (when `curiosity` low).
-- Sudden stop mid-path.
-- Open Inventory without reason.
-- Random emotes (`/wave`, `/laugh`).
-- Angled path movement.
-
-**Acceptance Criteria:**
-- Each behavior is an independent callable from FSM.
-- In 100 ticks with `dry_run=True`, at least 3 idle behaviors fire.
-
----
-
-### Task 5.5 — Path Variation
-**Dependencies:** 5.3
-**Output:** `src/wow_bot/executor/path.py`
-
-**Required API:**
-```python
-def generate_path(start: tuple, end: tuple, num_points: int = 5) -> list[tuple]:
-    """Curved path with random control points."""
+```text
+IDLE
 ```
 
-**Acceptance Criteria:**
-- Path is not straight (std dev from line > 5 px).
-- Path always passes through start and end.
+Flee threshold:
+
+```text
+0.60 - 0.40*risk_tolerance
+```
+
+Entry condition:
+
+```text
+in_combat and hp_pct <= threshold
+```
+
+Stuck:
+
+```text
+same movement-like action signature for >=5 simulated seconds
+```
+
+using `GameState.timestamp`.
+
+**Boundary rules**
+
+- low HP outside combat does not automatically flee;
+- state transitions deterministic;
+- backward timestamps rejected;
+- Strategy update does not reset FSM;
+- no physical action mapping;
+- only simulated `stop_all()` allowed on safety/recovery entry.
 
 ---
 
-## 🐕 Phase 6: Watchdog
+## Task 5.4 — Symbolic Idle Behaviors
 
-### Task 6.1 — Watchdog Process
-**Dependencies:** 5.3
+Exactly:
+
+```text
+CAMERA_WANDER
+SUDDEN_PAUSE
+INVENTORY_CHECK
+SOCIAL_EMOTE
+ANGLED_MOVEMENT
+```
+
+Independent callables + optional `IdleBehaviorEngine`.
+
+Frozen overall trigger probability:
+
+```text
+0.08 per eligible synthetic tick
+```
+
+Curiosity modifies behavior-selection weights, not trigger frequency.
+
+`SOCIAL_EMOTE` metadata only:
+
+```text
+wave
+laugh
+```
+
+No slash commands / key bindings / mouse coordinates.
+
+---
+
+## Task 5.5 — Synthetic Curved Path
+
+Expected API:
+
+```text
+generate_path(start, end, num_points=5, *, rng=None)
+```
+
+**Frozen**
+
+- `num_points` includes endpoints;
+- minimum 3;
+- start != end;
+- exact endpoints;
+- finite numeric 2D coordinates;
+- perpendicular single-arc/sine geometry;
+- side selected by RNG;
+- relative amplitude `10–20%` baseline;
+- minimum amplitude `20px`;
+- maximum `80px`;
+- monotonic baseline progress;
+- canonical deviation std > `5px`;
+- no Controller/FSM/timing integration.
+
+---
+
+# Phase 6 — Independent Watchdog Supervisor
+
+## Task 6.1 — Watchdog
+
 **Output:** `src/wow_bot/watchdog/watchdog.py`
 
-**Requirements:**
-- Independent `multiprocessing.Process`.
-- Monitors: stuck detection, death loop detection, high CPU usage.
-- Kill switch: `F10` → `sys.exit()` immediately.
-- Emergency shutdown must stop input generation, flush/close resources, and preserve audit logs for reproducibility. Do not delete logs as part of shutdown.
+Architecture:
 
-**Acceptance Criteria:**
-- Pressing F10 kills the process in <1s.
-- Watchdog detects if bot does nothing for 30s.
+```text
+main → Queue/messages → independent multiprocessing Watchdog
+Watchdog → shutdown Event → main
+```
+
+Health:
+
+```text
+HEALTHY
+DEGRADED
+CRITICAL
+```
+
+Frozen baseline constants:
+
+```text
+poll                         0.5s
+startup grace                30s
+heartbeat degraded           >=10s
+heartbeat critical           >=30s
+progress degraded            >=30s
+recovery window              60s
+recovery degraded            >=3 entries
+recovery critical            >=5 entries
+recovery max duration        >=20s
+death-loop window            600 simulation seconds
+death-loop degraded          >=3 deaths
+death-loop critical          >=5 deaths
+graceful shutdown timeout    10s
+```
+
+**Required**
+
+- injected/testable monotonic clock;
+- progress token monotonic;
+- count entries into STUCK_RECOVERY;
+- death loop uses simulation time;
+- health severity = max active severity;
+- DEGRADED does not shut down;
+- CRITICAL latches shutdown;
+- optional abstract ResourceProbe;
+- graceful request before bounded escalation;
+- preserve logs;
+- no F10/global hotkey;
+- no Controller;
+- no duplicated 5-second FSM stuck algorithm.
+
+Historical log-deletion / direct `sys.exit()` behavior is superseded.
 
 ---
 
-## 🔌 Phase 7: Integration
+# Phase 7 — Integration
 
-### Task 7.1 — Async Pipeline
-**Dependencies:** all prior phases
+> **Policy:** implementation may be completed in an isolated coding environment. Runtime acceptance is local-only.
+
+## Task 7.1 — Async Pipeline
+
 **Output:** `src/wow_bot/main.py`
 
-**Required:**
-```python
-async def main():
-    config = get_settings()
-    # 1. Build all components
-    # 2. Start asyncio tasks:
-    #    - perception_loop (or mock)
-    #    - dynamics_loop
-    #    - strategist_loop
-    #    - executor_loop
-    # 3. Wait for Ctrl+C
+Required logical loops:
+
+```text
+perception
+dynamics
+strategist
+executor
+watchdog heartbeat
+watchdog shutdown bridge
 ```
 
-**Acceptance Criteria:**
-- `python -m wow_bot.main` runs.
-- With MockPerception, runs for 5 minutes without crash.
-- Logs show full cycle working.
+Expected data flow:
+
+```text
+MockPerception
+→ GameState
+→ MetaState
+→ Strategist
+→ Strategy
+→ ExecutorFSM
+```
+
+Queue policy:
+
+- bounded;
+- ordered/backpressure for domain flow;
+- latest-value semantics for Strategist planning snapshots;
+- avoid stale Strategy backlogs.
+
+Clock rules:
+
+- GameState time for Dynamics/Strategy/cooldown;
+- Watchdog monotonic clock for liveness;
+- async real time only for scheduling/bounded run.
+
+Strategist refresh:
+
+```text
+no current Strategy
+OR expired
+OR adaptive MetaState trigger
+```
+
+Failed refresh cooldown:
+
+```text
+10 simulation seconds
+```
+
+FSM bootstrap:
+
+- no fabricated Strategy;
+- construct after first valid Strategy;
+- reuse FSM;
+- later Strategy uses `set_strategy`.
+
+Watchdog:
+
+- one process;
+- heartbeats about once per second unless approved equivalent;
+- progress token increments per completed Dynamics step;
+- explicit death messages;
+- shutdown Event bridged to graceful async cleanup.
+
+Cleanup:
+
+```text
+stop loops
+controller.stop_all
+close LLM resources
+close memory
+stop/join Watchdog
+preserve logs
+```
+
+### Local-only acceptance
+
+Defined in `LOCAL_VALIDATION_ROADMAP.md`:
+
+- structural `python -m wow_bot.main`;
+- short smoke;
+- 300-second MockPerception stability;
+- full lifecycle/cleanup/Watchdog observation.
 
 ---
 
-### Task 7.2 — Scenario Runner
-**Dependencies:** 7.1
+## Task 7.2 — Scenario Runner
+
 **Output:** `scripts/run_scenario.py`
 
-**Requirements:**
-- Pick scenario from MockPerception.
-- Run for 10 minutes.
-- Collect stats: LLM call count, state transitions, time delay distribution.
-- Output: JSON report to `reports/`.
+CLI supports at minimum:
 
-**Acceptance Criteria:**
-- `python scripts/run_scenario.py --scenario combat_light --duration 600`
-- JSON output with complete stats.
-
----
-
-## 📊 Phase 8: Analysis & Final Testing
-
-### Task 8.1 — FFT Analysis on Scenario/Recorded Data
-**Dependencies:** 7.2
-**Output:** `scripts/analyze_spectrum.py`
-
-**Requirements:**
-- From scenario report, extract MetaState time series.
-- FFT + PSD + slope calculation.
-- Output: plot + slope value.
-
-**Acceptance Criteria:**
-- Slope in `[-1.5, -0.5]`.
-
----
-
-### Task 8.2 — Timing Distribution Analysis
-**Dependencies:** 7.2
-**Output:** `scripts/analyze_timing.py`
-
-**Requirements:**
-- Extract all `human_delay` values from logs.
-- KS test vs log-normal.
-- CV calculation.
-
-**Acceptance Criteria:**
-- p-value > 0.05 (fits log-normal).
-- CV > 0.3.
-
----
-
-### Task 8.3 — 24-Hour Test
-**Dependencies:** all
-**Output:** final report
-
-**Requirements:**
-- Run bot for 24h with MockPerception continuously.
-- Measure: memory usage, CPU usage, log size.
-- Check for leaks or crashes.
-
-**Acceptance Criteria:**
-- Zero crashes in 24h.
-- Memory usage stable (no leak).
-
----
-
-## 🎁 Phase 9: Real Perception Integration
-
-### Task 9.1 — Perception Adapter
-**Dependencies:** teammate's Perception delivered
-**Output:** `src/wow_bot/perception/adapter.py`
-
-**Requirements:**
-- Adapter converts teammate's output to `GameState`.
-- Validation of incoming data.
-
-**Acceptance Criteria:**
-- From a prerecorded/lab screenshot fixture, produces a valid `GameState`.
-
----
-
-## 📋 Master Checklist for Agent
-
-```
-Phase 0 (Bootstrap):       Tasks 0.1 → 0.2 → 0.3 → 0.4 → 0.5
-Phase 1 (Interfaces):      Tasks 1.1 → 1.2 → 1.3
-Phase 2 (Mock):            Tasks 2.1 → 2.2
-Phase 3 (Dynamics):        Tasks 3.1 → 3.2 → 3.3 → 3.4 → 3.5 → 3.6 → 3.7
-Phase 4 (Strategist):      Tasks 4.1 → 4.2 → 4.3 → 4.4
-Phase 5 (Executor):        Tasks 5.1 → 5.2 → 5.3 → 5.4 → 5.5
-Phase 6 (Watchdog):        Tasks 6.1
-Phase 7 (Integration):     Tasks 7.1 → 7.2
-Phase 8 (Analysis):        Tasks 8.1 → 8.2 → 8.3
-Phase 9 (Real Perception): Task 9.1 (blocked until teammate delivers)
+```text
+--scenario
+--duration
+--seed
+--output
 ```
 
-**Golden Rule:** Do not start a phase until the previous phase is complete and its tests pass.
+Roadmap command:
+
+```bash
+python scripts/run_scenario.py --scenario combat_light --duration 600 --seed 42
+```
+
+Report schema version:
+
+```text
+1
+```
+
+High-level JSON:
+
+```text
+run
+summary
+strategist
+fsm
+meta_state
+timing
+watchdog
+```
+
+Required raw data:
+
+```text
+MetaState timestamps + vectors
+timing samples
+structured FSM transitions
+Strategist generation counts
+death-event metrics
+```
+
+Strict JSON; no NaN/Infinity.
+
+Instrumentation is passive.
+
+Enhanced Task 8.2 metadata may add:
+
+```text
+timing.samples[].delay_ms
+timing.samples[].base_ms
+timing.samples[].fatigue
+timing.samples[].chaos_component
+timing.samples[].simulation_timestamp
+```
+
+without removing `timing.samples_ms`.
+
+### Local-only acceptance
+
+- 60-second smoke;
+- 600-second `combat_light`;
+- scenario matrix;
+- report schema inspection.
 
 ---
 
-## 🚫 What NOT to Do
+# Phase 8 — Offline Analysis / Stability
 
-- ❌ Do NOT touch the game process (no DLL injection, no ReadProcessMemory, no addons).
-- ❌ Do NOT deploy or validate the automation against official game services; use mock/synthetic/prerecorded or isolated lab inputs.
-- ❌ Do NOT make network calls to non-local services (LLM must be local).
-- ❌ Do NOT use fixed random seeds in production (only in tests).
-- ❌ Do NOT hardcode UI coordinates (use config).
-- ❌ Do NOT skip acceptance criteria tests.
-- ❌ Do NOT commit `.env`, `logs/`, `data/`, or `*.db`.
+> **Policy:** analyzer/harness implementation can be reviewed offline. Scientific/long-running acceptance is local-only.
+
+## Task 8.1 — Spectrum Analysis
+
+**Output:** `scripts/analyze_spectrum.py` plus optional reusable analysis module.
+
+Input:
+
+```text
+Task 7.2 schema_version 1
+meta_state.dimensions
+meta_state.samples
+```
+
+Method:
+
+1. validate canonical dimensions/data;
+2. minimum data threshold;
+3. compute timestamp deltas;
+4. diagnostics: median/mean/std `dt`, sampling rate, `dt` CV;
+5. resample each signal to uniform grid using median `dt`;
+6. constant detrend;
+7. FFT diagnostics;
+8. Welch PSD;
+9. positive finite bins only;
+10. log10 frequency/PSD;
+11. fit linear slope;
+12. optionally report R².
+
+Target per drive:
+
+```text
+-1.5 <= slope <= -0.5
+```
+
+A valid out-of-range result is scientific evidence, not an exception.
+
+Outputs:
+
+```text
+spectrum_analysis.json
+spectrum_psd.png
+```
+
+### Local-only acceptance
+
+Run against real 7.2 reports and inspect all five slopes.
 
 ---
 
-## 🎯 Success Criteria (Project Level)
+## Task 8.2 — Timing Distribution Analysis
 
-By end of Phase 8, the system must demonstrate:
+**Output:** `scripts/analyze_timing.py` plus optional reusable analysis module.
 
-1. **Spectral signature:** 1/f noise in MetaState time series (slope in `[-1.5, -0.5]`).
-2. **Human-like timing:** Log-normal delay distribution (KS p > 0.05).
-3. **Adaptive strategy:** LLM produces evolving strategies (not replacing from scratch).
-4. **No process contamination:** Zero contact with game process.
-5. **Stable operation:** 24h continuous run without crash or leak.
+Input:
+
+```text
+Task 7.2 timing section
+```
+
+Model:
+
+```text
+mu = log(base_ms)
+sigma = 0.4 + 0.2*chaos + 0.3*fatigue
+clip to [50,2000]
+```
+
+Primary method:
+
+```text
+per-sample conditional CDF
+→ randomized boundary-aware PIT
+→ one-sample KS against Uniform(0,1)
+```
+
+Fixed PIT seed:
+
+```text
+8202
+```
+
+PIT rules:
+
+- interior: `u = F(delay)`;
+- lower clipped: randomize in `[0, F(lower)]`;
+- upper clipped: randomize in `[F(upper), 1]`.
+
+Roadmap targets:
+
+```text
+p-value > 0.05
+CV > 0.3
+```
+
+CV:
+
+```text
+np.std(samples, ddof=1) / mean(samples)
+```
+
+Legacy report without conditional metadata:
+
+- descriptive analysis allowed;
+- exact conditional KS marked unavailable;
+- do not fake overall acceptance.
+
+Outputs:
+
+```text
+timing_analysis.json
+timing_distribution.png
+```
+
+### Local-only acceptance
+
+Run against a freshly generated enhanced Task 7.2 report.
 
 ---
 
-**END OF ROADMAP**
+## Task 8.3 — 24-Hour Soak Harness
+
+**Output:** `scripts/run_soak_test.py` plus optional reusable soak module.
+
+This task implements the harness; it does not execute 24 hours in Jules.
+
+CLI:
+
+```text
+--scenario
+--duration
+--sample-interval
+--seed
+--output
+--log-path (if needed)
+```
+
+Recommended local command:
+
+```bash
+python scripts/run_soak_test.py \
+  --scenario peaceful_farm \
+  --duration 86400 \
+  --sample-interval 30 \
+  --seed 42 \
+  --output reports/soak_24h.json
+```
+
+Metrics as available:
+
+```text
+elapsed_seconds
+cpu_percent
+memory_rss_mb
+log_size_bytes
+progress_token
+watchdog_alive
+shutdown_requested
+```
+
+Summary:
+
+```text
+initial/final/min/max/mean memory
+memory delta
+memory growth percent
+memory slope MB/hour
+average/max CPU
+log growth
+progress delta
+termination reason
+zero_crash_target_met
+```
+
+**Important**
+
+No arbitrary automatic memory-leak threshold.
+
+```text
+memory_stability_status = manual_review_required
+```
+
+Requirements:
+
+- real monotonic duration;
+- periodic metrics;
+- main process/process-tree scope documented;
+- strict JSON;
+- partial/checkpoint evidence survives interruption/failure when feasible;
+- no auto-restart after crash;
+- no runtime model tuning.
+
+### Local-only acceptance
+
+- 5-minute harness smoke;
+- 1-hour intermediate soak;
+- 24-hour run;
+- zero crashes;
+- manual memory-stability assessment.
+
+---
+
+# Phase 9 — External Perception
+
+## Task 9.1 — Perception Adapter
+
+Status:
+
+```text
+PENDING — external dependency not delivered/unblocked
+```
+
+Do not implement proactively.
+
+When unblocked, a new explicit task must define:
+
+- input contract of external perception;
+- conversion to `GameState`;
+- validation;
+- prerecorded/lab fixture acceptance;
+- no expansion into direct game-process access.
+
+---
+
+# Master Reviewer Status Rule
+
+A reviewer must not equate these statuses:
+
+```text
+implemented
+unit/static validated
+local runtime validated
+scientifically accepted
+```
+
+For Tasks 7.1–8.3 they are separate gates.
+
+Use `LOCAL_VALIDATION_ROADMAP.md` to determine final acceptance.

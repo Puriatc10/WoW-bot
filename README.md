@@ -1,119 +1,160 @@
 # WoW-Bot Research Prototype
 
-A **mock-first academic research prototype** for studying autonomous game-agent architecture, behavioral dynamics, and the limitations of modern anti-cheat detection approaches.
+A **mock-first, dry-run academic research prototype** for studying layered autonomous-agent architecture, internal behavioral dynamics, reproducible simulation, local LLM planning, deterministic execution-state machines, supervision, and long-running statistical analysis.
 
-> **Research scope:** This repository is intended for synthetic inputs, prerecorded screenshots, and isolated lab environments under your control. It is not intended for deployment against official game services.
+> **Scope boundary:** development and evaluation use synthetic `GameState` inputs, `MockPerception`, prerecorded fixtures, and isolated environments under the researcher's control. The current executor is simulation-only. This repository is not intended for deployment against official game services.
 
 ---
 
-## Overview
+## Current Project State
 
-The project explores a layered autonomous-agent architecture in which high-level strategy, internal state, perception, and execution are separated behind explicit contracts.
+The project specification is frozen through **Task 8.3**.
 
-The main architectural idea is that the language model acts only as a **high-level strategist**. Fast, moment-to-moment decisions are handled locally by deterministic components such as the internal-dynamics engine and executor state machine.
+- Phases 0–6 define the core architecture and component contracts.
+- Phase 7 integrates the components and produces structured scenario reports.
+- Phase 8 analyzes those reports and provides a long-running soak-test harness.
+- Runtime/scientific acceptance for **Tasks 7.1–8.3 is intentionally local-only** and is documented in [`LOCAL_VALIDATION_ROADMAP.md`](./LOCAL_VALIDATION_ROADMAP.md).
+- **Task 9.1 is PENDING** until the external perception dependency is available.
+- A coding/reviewer agent must not infer that local validation passed merely because the implementation exists.
 
-Development follows a **Mock-First** approach: the real perception layer is intentionally postponed until the rest of the system can be developed, tested, and analyzed against synthetic `GameState` inputs.
+Read project documentation in this order:
+
+1. [`README.md`](./README.md)
+2. [`AGENTS.md`](./AGENTS.md)
+3. [`ROADMAP.md`](./ROADMAP.md)
+4. [`REVIEWER_GUIDE.md`](./REVIEWER_GUIDE.md)
+5. [`LOCAL_VALIDATION_ROADMAP.md`](./LOCAL_VALIDATION_ROADMAP.md)
 
 ---
 
 ## Architecture
 
 ```text
-┌──────────────────────────────────────────┐
-│              Perception Layer            │
-│      screenshot / mock → GameState       │
-└────────────────────┬─────────────────────┘
-                     │
-                     ▼
-┌──────────────────────────────────────────┐
-│         Internal Dynamics Layer          │
-│ Drives + Oscillators + Chaos + Memory    │
-│          → MetaState + trigger           │
-└────────────────────┬─────────────────────┘
-                     │
-                     ▼
-┌──────────────────────────────────────────┐
-│             Strategist Layer             │
-│          Local LLM via Ollama            │
-│              → Strategy                  │
-└────────────────────┬─────────────────────┘
-                     │
-                     ▼
-┌──────────────────────────────────────────┐
-│              Executor Layer              │
-│       FSM + timing + path planning       │
-│                → Actions                 │
-└────────────────────┬─────────────────────┘
-                     │
-                     ▼
-┌──────────────────────────────────────────┐
-│              Watchdog Layer              │
-│     health monitoring + emergency stop   │
-└──────────────────────────────────────────┘
+                     ┌────────────────────────┐
+                     │    MockPerception      │
+                     │   → synthetic state    │
+                     └───────────┬────────────┘
+                                 │ GameState
+                                 ▼
+                     ┌────────────────────────┐
+                     │   Internal Dynamics    │
+                     │ Drives / Oscillators   │
+                     │ Lorenz / Memory        │
+                     └───────────┬────────────┘
+                                 │ MetaState
+                                 ▼
+                     ┌────────────────────────┐
+                     │      Strategist        │
+                     │ local Ollama + parser  │
+                     └───────────┬────────────┘
+                                 │ Strategy
+                                 ▼
+                     ┌────────────────────────┐
+                     │      Executor FSM      │
+                     │ deterministic states   │
+                     └───────────┬────────────┘
+                                 │
+                     symbolic / dry-run intent
+                                 │
+                                 ▼
+                     ┌────────────────────────┐
+                     │  Simulation Controller │
+                     │ no physical OS input   │
+                     └────────────────────────┘
+
+                Runtime health metadata
+                         │
+                         ▼
+              ┌─────────────────────┐
+              │ Independent Watchdog│
+              │ multiprocessing     │
+              └─────────┬───────────┘
+                        │ shutdown request
+                        ▼
+                 graceful cleanup
+
+Scenario reports ──→ Spectrum analysis / Timing analysis / Soak analysis
 ```
 
 ### Layer responsibilities
 
-| Layer | Responsibility | Main output |
-|---|---|---|
-| Perception | Convert synthetic or visual input into normalized game state | `GameState` |
-| Internal Dynamics | Maintain long-lived internal state, memory, oscillators, and trigger logic | `MetaState` |
-| Strategist | Produce high-level strategy from state and recent history | `Strategy` |
-| Executor | Translate strategy and current state into local FSM actions | Controller actions |
-| Watchdog | Observe health, stuck conditions, and shutdown signals | Diagnostics / stop signal |
-
-The layer boundaries are intentional. Cross-layer shortcuts and shared mutable global state should be avoided.
+| Layer | Owns | Produces | Must not own |
+|---|---|---|---|
+| Mock Perception | Synthetic scenario generation | `GameState` | strategy, executor behavior |
+| Internal Dynamics | Drives, oscillators, Lorenz chaos, memory, trigger | `MetaState` | LLM calls, controller I/O |
+| Strategist | Prompting, local LLM call, strict parse, fallback | `Strategy` | frame-by-frame action logic |
+| Executor FSM | Deterministic state transitions | local execution state | LLM calls, wall-clock decision logic |
+| Simulation helpers | timing/error/path/idle models | synthetic values/intents | physical input |
+| Watchdog | liveness, progress, recovery/death-loop supervision | health + shutdown request | FSM business logic |
+| Reporting | passive instrumentation | versioned JSON | changing runtime behavior |
+| Analysis | offline scientific analysis | JSON + plots | tuning the model to pass |
 
 ---
 
-## Core Contracts
+## Stable Shared Contracts
 
-The main interfaces between layers are defined in `src/wow_bot/shared/interfaces.py`.
+The reviewer must inspect the actual definitions in `src/wow_bot/shared/interfaces.py`. The intended contract is:
 
 ### `GameState`
 
-Produced by Perception and consumed by Internal Dynamics and Executor.
+```text
+timestamp
+hp_pct
+mana_pct
+position
+facing
+in_combat
+target
+enemies
+events
+```
 
-Typical fields include:
-
-- timestamp
-- HP / mana percentage
-- approximate position and facing
-- combat state
-- target information
-- nearby enemies
-- emitted events
+`timestamp` is the authoritative **simulation/domain time**.
 
 ### `MetaState`
 
-Produced by Internal Dynamics and consumed by Strategist.
+```text
+vector: shape (5,)
+recent_events
+timestamp
+```
 
-It contains the five-dimensional internal-state vector:
+Canonical vector order:
 
 ```text
 [hunger, fatigue, curiosity, aggression, social]
 ```
 
-plus recent events and a timestamp.
-
 ### `Strategy`
 
-Produced by Strategist and consumed by Executor.
+```text
+goal
+region
+risk_tolerance
+priority
+constraints
+valid_until
+raw_llm_output = ""
+```
 
-It contains high-level intent such as:
+Frozen goal vocabulary:
 
-- goal
-- region
-- risk tolerance
-- priorities
-- constraints
-- validity window
+```text
+farm_herbs
+grind_humans
+explore
+flee
+```
 
 ### `Event`
 
-Used to communicate meaningful state changes between Perception, Dynamics, and Memory.
+```text
+type
+timestamp
+data
+```
 
-The public contracts are treated as stable. Existing fields should not be removed or renamed without coordination.
+Public fields must not be removed or renamed silently. Additive changes must be backward-compatible and optional unless explicitly coordinated.
 
 ---
 
@@ -124,16 +165,21 @@ The public contracts are treated as stable. Existing fields should not be remove
 | Language | Python 3.12+ |
 | Concurrency | `asyncio` |
 | Package manager | `uv` |
-| Local LLM runtime | Ollama |
+| LLM runtime | local Ollama |
 | Default model | Qwen 2.5 7B |
-| LLM client | OpenAI-compatible async client over local Ollama |
-| Validation / config | Pydantic |
-| Memory store | SQLite via `aiosqlite` |
-| Numerical work | NumPy + SciPy |
+| LLM client | OpenAI-compatible async client |
+| HTTP transport | `httpx.AsyncClient(trust_env=False)` |
+| Config/validation | Pydantic |
+| Memory | SQLite via `aiosqlite` |
+| Numerical/statistical work | NumPy + SciPy |
+| Plotting | Matplotlib when Phase 8 requires it |
 | Logging | Loguru |
-| Testing | Pytest + pytest-asyncio |
-| Type checking | mypy, strict mode |
+| Testing | pytest + pytest-asyncio |
+| Type checking | mypy strict |
 | Linting | Ruff |
+| Process supervision | `multiprocessing` |
+
+A dependency must not be added only to work around an isolated agent environment.
 
 ---
 
@@ -144,289 +190,267 @@ wow-bot/
 ├── README.md
 ├── ROADMAP.md
 ├── AGENTS.md
+├── REVIEWER_GUIDE.md
+├── LOCAL_VALIDATION_ROADMAP.md
 ├── pyproject.toml
-├── .gitignore
-├── .env.example
 ├── config/
 │   └── config.json
 ├── src/
 │   └── wow_bot/
 │       ├── shared/
+│       ├── mocks/
 │       ├── internal_dynamics/
 │       ├── strategist/
 │       ├── executor/
-│       ├── perception/
 │       ├── watchdog/
-│       ├── mocks/
+│       ├── analysis/          # optional reusable helpers
+│       ├── reporting/         # optional reusable helpers
 │       └── main.py
+├── scripts/
+│   ├── run_scenario.py
+│   ├── analyze_spectrum.py
+│   ├── analyze_timing.py
+│   └── run_soak_test.py
 ├── tests/
 │   ├── unit/
 │   ├── integration/
 │   └── fixtures/
-├── scripts/
-└── reports/
+└── reports/                   # runtime artifacts; normally ignored
 ```
-
-Important files:
-
-| File | Purpose |
-|---|---|
-| `ROADMAP.md` | Authoritative task order, dependencies, outputs, and acceptance criteria |
-| `AGENTS.md` | Architecture, invariants, coding rules, testing rules, and agent workflow |
-| `config/config.json` | Runtime configuration and tunable parameters |
-| `src/wow_bot/shared/interfaces.py` | Stable data contracts between layers |
 
 ---
 
-## Development Model
+## Core Runtime Rules
 
-The project is implemented phase-by-phase.
+### Dry-run only
+
+The current controller is a **simulation recorder**.
+
+- `dry_run=True` is the supported mode.
+- `dry_run=False` must be rejected.
+- The codebase must not depend on physical-input libraries such as `pynput`, `pyautogui`, OS keyboard hooks, DirectInput, `xdotool`, or `uinput`.
+- FSM, idle behaviors, timing helpers, and path helpers must not bypass this boundary.
+
+### Mock-first
+
+Until Task 9.1 is explicitly unblocked:
+
+- runtime perception comes from `MockPerception`;
+- no real screenshot adapter is required;
+- no direct game-process integration exists;
+- Task 9.1 remains untouched.
+
+### Local LLM only
+
+The intended runtime uses Ollama on localhost. No cloud LLM is part of the runtime path.
+
+### Evidence preservation
+
+Shutdown paths preserve logs and diagnostics. No anti-forensic deletion or log truncation is allowed.
+
+---
+
+## Clock Domains
+
+### Simulation/domain time
+
+Use `GameState.timestamp` for:
+
+- Dynamics `dt`;
+- adaptive MetaState threshold;
+- Strategy validity/expiry;
+- Strategist retry cooldown;
+- deterministic replay and scenario-domain timestamps.
+
+### Real monotonic time
+
+Use `time.monotonic()` only for operational concerns:
+
+- Watchdog heartbeat age;
+- progress stall duration;
+- recovery supervision;
+- soak-test elapsed runtime;
+- resource sampling cadence.
+
+### Async scheduling time
+
+`asyncio.sleep()` may be used by runtime scheduling/harnesses, not as a replacement for domain time.
+
+Clock-domain mixing is a high-risk defect.
+
+---
+
+## Development / Validation Model
+
+### Tasks 0–6
+
+Normal implementation tasks should have executable unit/integration evidence inside the regular test suite where practical.
+
+### Tasks 7.1–8.3
+
+These tasks are intentionally split:
 
 ```text
-Phase 0  Bootstrap
-Phase 1  Interfaces & Data Contracts
-Phase 2  Mock Perception
-Phase 3  Internal Dynamics
-Phase 4  Strategist
-Phase 5  Executor
-Phase 6  Watchdog
-Phase 7  Integration
-Phase 8  Analysis & Long-Running Tests
-Phase 9  Perception Adapter / Lab Integration
+IMPLEMENTATION:
+coding agent / Jules
+
+RUNTIME OR SCIENTIFIC ACCEPTANCE:
+developer local environment
 ```
 
-The complete task-level plan is in [`ROADMAP.md`](./ROADMAP.md).
+An isolated coding agent must not:
 
-**Rule:** do not start a phase while the previous phase has failing acceptance criteria.
+- fake a 5-minute/10-minute/24-hour run;
+- claim Ollama integration passed if Ollama was unavailable;
+- alter thresholds to make synthetic tests green;
+- mark implementation blocked only because long runtime validation is unavailable.
+
+The local procedure is defined in [`LOCAL_VALIDATION_ROADMAP.md`](./LOCAL_VALIDATION_ROADMAP.md).
 
 ---
 
-## Mock-First Approach
+## Quality Gates
 
-Until Phase 9, the system uses `MockPerception` instead of a real perception implementation.
+Typical static/offline gates:
 
-This allows the core architecture to be developed independently of a game installation and provides reproducible scenarios for automated testing.
+```bash
+uv run --extra dev ruff check .
+uv run --extra dev mypy src
+uv run --extra dev pytest
+```
 
-Planned mock scenarios include:
+Use the repository-defined equivalent if configuration differs.
 
-- `peaceful_farm`
-- `combat_light`
-- `death_loop`
-- `rare_loot_drought`
-- `stuck_repeatedly`
-
-Tests use fixed seeds where reproducibility is required. Production-style simulation uses runtime entropy.
+For Phase 7–8, these commands establish code quality but **do not replace** local runtime/scientific gates.
 
 ---
 
-## Installation
+## Scenario Reports
 
-### Prerequisites
+Task 7.2 defines a versioned structured JSON research artifact.
 
-- Python 3.12+
-- `uv`
-- Ollama, for Strategist-related phases
-
-### Install dependencies
-
-```bash
-uv sync --all-extras
-```
-
-### Local LLM
-
-Install the default model:
-
-```bash
-ollama pull qwen2.5:7b
-```
-
-Start Ollama if it is not already running:
-
-```bash
-ollama serve
-```
-
-The default configuration expects an OpenAI-compatible endpoint at:
-
-```text
-http://127.0.0.1:11434/v1/
-```
-
-All language-model requests are expected to remain local.
-
----
-
-## Configuration
-
-Runtime settings live in:
-
-```text
-config/config.json
-```
-
-The configuration is loaded and validated through Pydantic.
-
-The default executor configuration must remain in dry-run mode during ordinary development:
+Expected high-level shape:
 
 ```json
 {
-  "executor": {
-    "dry_run": true
-  }
+  "schema_version": 1,
+  "run": {},
+  "summary": {},
+  "strategist": {},
+  "fsm": {},
+  "meta_state": {},
+  "timing": {},
+  "watchdog": {}
 }
 ```
 
-Do not silently switch dry-run off in automated-agent changes.
-
----
-
-## Running the Project
-
-Once the integration phase is implemented, the main entry point is:
-
-```bash
-uv run python -m wow_bot.main
-```
-
-During earlier phases, individual modules and tests are the primary execution path.
-
-A scenario runner is planned at:
-
-```bash
-uv run python scripts/run_scenario.py --scenario combat_light --duration 600
-```
-
-Scenario execution should produce structured reports under `reports/` when that phase is implemented.
-
----
-
-## Testing and Quality Gates
-
-Run the test suite:
-
-```bash
-uv run pytest
-```
-
-Run linting:
-
-```bash
-uv run ruff check .
-```
-
-Run strict type checking:
-
-```bash
-uv run mypy src tests
-```
-
-Tests are expected to be:
-
-- deterministic when reproducibility matters
-- isolated
-- async-aware
-- focused on behavior and acceptance criteria
-- reachable from the canonical Pytest path
-
-Important integration checks include:
-
-- MetaState spectral analysis
-- strategy fallback behavior
-- malformed LLM output handling
-- async resource cleanup
-- executor dry-run behavior
-- long-running stability tests
-
----
-
-## Analysis Goals
-
-The research prototype includes explicit measurable outputs rather than relying only on visual inspection.
-
-Examples include:
-
-- power spectral density analysis of internal-state time series
-- log-normal timing-distribution analysis
-- strategy evolution across state changes
-- LLM invocation frequency
-- FSM transition statistics
-- memory and CPU stability during long-running simulation
-
-The relevant scripts are developed in Phase 8.
-
----
-
-## Working With Coding Agents
-
-AI coding agents must read the project documents before modifying code.
-
-Recommended startup instruction:
+Important analysis contracts:
 
 ```text
-Read AGENTS.md completely, then ROADMAP.md.
-Inspect the repository and all dependencies of the first incomplete task.
-Work on exactly one task at a time.
-Do not skip acceptance criteria or change public contracts without coordination.
+meta_state.dimensions
+meta_state.samples[*].simulation_timestamp
+meta_state.samples[*].vector
+
+timing.unit
+timing.samples_ms
+timing.samples[*]
 ```
 
-For every task, the expected workflow is:
-
-1. Read the relevant task and dependencies.
-2. Inspect the existing implementation.
-3. Make the smallest task-scoped change.
-4. Add tests that prove the acceptance criteria.
-5. Run narrow tests.
-6. Run project-level checks where applicable.
-7. Report changed files, commands run, evidence, and remaining risks.
-
-See [`AGENTS.md`](./AGENTS.md) for the complete agent protocol.
+Operational logs are not the authoritative scientific dataset.
 
 ---
 
-## Project Invariants
+## Phase 8 Analysis
 
-The following rules are intentional architectural constraints:
+### Spectrum
 
-- no direct access to the game process
-- no DLL injection or process-memory access
-- no addons or game-file manipulation
-- no cloud LLM dependency in the runtime path
-- no hardcoded UI coordinates
-- no skipped acceptance tests
-- no unrelated refactors inside task-scoped changes
-- no hidden blocking I/O inside the asyncio event loop
-- no removal or renaming of stable contract fields without coordination
-- dry-run execution by default
-- preserve diagnostic logs and reproducibility data
+- consume Task 7.2 JSON;
+- validate schema;
+- derive sampling diagnostics from simulation timestamps;
+- resample onto a uniform grid using median `dt`;
+- analyze each drive independently;
+- use FFT plus Welch PSD;
+- fit slope in log-log space;
+- target per-drive range: `[-1.5, -0.5]`;
+- valid analysis outside the target is a scientific result, not a software exception.
+
+### Timing
+
+Timing model:
+
+```text
+mu = log(base_ms)
+sigma = 0.4 + 0.2*chaos_component + 0.3*fatigue
+delay = clip(LogNormal(mu, sigma), 50, 2000)
+```
+
+Primary validation:
+
+- randomized probability-integral transform (PIT);
+- boundary-aware clipping treatment;
+- KS test against `Uniform(0,1)`;
+- fixed PIT seed `8202`;
+- roadmap target `p > 0.05`;
+- CV computed from actual clipped delays;
+- roadmap target `CV > 0.3`.
+
+### Soak
+
+Task 8.3 provides the harness. It must not invent a memory-leak threshold.
+
+It records CPU, RSS memory, log growth, progress, termination reason, crash outcome, and memory trend.
+
+The **24-hour run is local-only**. Zero crashes is objective; memory stability requires evidence review.
 
 ---
 
-## Research and Usage Boundary
+## Working With Agents
 
-This repository is an academic software-architecture study.
+### Coding agent
 
-Development and evaluation should use:
+Read `AGENTS.md`, `ROADMAP.md`, then current task dependencies. Implement exactly one task.
 
-- synthetic `GameState` data
-- `MockPerception`
-- prerecorded screenshots
-- isolated environments under the researcher's control
+### Reviewer agent
 
-The project documentation does not treat successful operation against official services as a development or acceptance goal.
+Read all five documentation files, then compare actual code against frozen contracts.
 
----
+Reviewer status must distinguish:
 
-## Documentation
-
-Read these files in this order when joining the project:
-
-1. [`README.md`](./README.md) — project overview and setup
-2. [`AGENTS.md`](./AGENTS.md) — architecture and engineering rules
-3. [`ROADMAP.md`](./ROADMAP.md) — implementation sequence and acceptance criteria
+```text
+implemented
+static/offline validated
+local runtime validated
+scientifically accepted
+```
 
 ---
 
-## License
+## Project-Level Invariants
 
-No license has been selected yet. Add an explicit `LICENSE` file before distributing or accepting external contributions.
+Flag violations of:
+
+- simulation-only Controller;
+- no physical OS input;
+- no direct game-process/memory access;
+- no cloud LLM fallback;
+- logs preserved;
+- shared contracts stable;
+- canonical drive order unchanged;
+- no backward simulation time acceptance;
+- no fabricated initial Strategy;
+- FSM reused across Strategy updates;
+- Watchdog does not duplicate FSM stuck logic;
+- no global F10/hotkey Watchdog core;
+- report-based scientific analysis;
+- no post-result threshold/seed tuning;
+- Task 9.1 remains pending.
+
+---
+
+## Task 9.1 Status
+
+```text
+PENDING
+```
+
+Do not implement real Perception until the external dependency is delivered and a new explicit task is issued.
