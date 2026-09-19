@@ -9,19 +9,21 @@ Coordinates the Internal Dynamics subsystem components for each simulation step:
 Conceptually:
   GameState → LorenzAttractor → OscillatorBank → Drives → events + decay + MemoryStore → MetaState
 
-Also provides the non-adaptive static decision rule ``should_trigger_llm`` for
-determining whether the LLM Strategist should be triggered based on vector Euclidean change.
+Also provides the adaptive decision rule ``should_trigger_llm`` for
+determining whether the LLM Strategist should be triggered based on vector Euclidean change
+relative to a slow deterministic adaptive threshold.
 
 Invariants & Behavior:
   - Injected dependencies: MetaStateGenerator coordinates collaborators but does NOT own
     their lifecycles or instantiate them.
-  - dt < 0 raises ValueError before mutating any collaborators.
+  - dt < 0 raises ValueError before mutating any collaborators or internal time state.
   - Deterministic execution sequence:
-      validate dt → chaos step → chaos normalization → oscillator step →
-      drives step → apply events → decay → persist events → construct MetaState
+      validate dt → advance simulated time → chaos step → chaos normalization →
+      oscillator step → drives step → apply events → decay → persist events → construct MetaState
   - MetaState timestamp strictly uses game_state.timestamp (no time.time()).
   - MetaState.vector strictly matches drives.vector (canonical 5-drive vector).
-  - trigger rule compares Euclidean distance of drive vectors against trigger_threshold_base using strict (>).
+  - Trigger threshold oscillates slowly according to threshold(t) = base + 0.1 * sin(2π * t / 7200).
+  - trigger rule compares Euclidean distance of drive vectors against trigger_threshold using strict (>).
 """
 
 from __future__ import annotations
@@ -85,11 +87,22 @@ class MetaStateGenerator:
             )
 
         self._trigger_threshold_base: float = threshold
+        self._elapsed_seconds: float = 0.0
 
     @property
     def trigger_threshold_base(self) -> float:
         """Return the base trigger threshold value."""
         return self._trigger_threshold_base
+
+    @property
+    def trigger_threshold(self) -> float:
+        """Return the current calculated adaptive trigger threshold.
+
+        Threshold formula: base + 0.1 * sin(2 * pi * (elapsed_seconds % 7200.0) / 7200.0).
+        Pure read-only accessor that does not alter state.
+        """
+        phase = 2.0 * math.pi * (self._elapsed_seconds % 7200.0) / 7200.0
+        return self._trigger_threshold_base + 0.1 * math.sin(phase)
 
     async def step(
         self,
@@ -108,9 +121,12 @@ class MetaStateGenerator:
         Raises:
             ValueError: If dt < 0.0.
         """
-        # Step 1 — validate dt BEFORE mutating any collaborator
+        # Step 1 — validate dt BEFORE mutating any collaborator or time state
         if dt < 0.0:
             raise ValueError(f"dt must be non-negative, got {dt}")
+
+        # Advance internal simulated time
+        self._elapsed_seconds += dt
 
         # Step 2 — advance chaos
         self._chaos.step()
@@ -147,16 +163,16 @@ class MetaStateGenerator:
         current: MetaState,
         last: MetaState,
     ) -> bool:
-        """Evaluate static decision rule for triggering the LLM Strategist.
+        """Evaluate adaptive decision rule for triggering the LLM Strategist.
 
-        Triggers when Euclidean norm of (current.vector - last.vector) > trigger_threshold_base.
+        Triggers when Euclidean norm of (current.vector - last.vector) > current adaptive trigger_threshold.
 
         Args:
             current: Current step's MetaState.
             last: Previous step's MetaState.
 
         Returns:
-            True if Euclidean distance > trigger_threshold_base, False otherwise.
+            True if Euclidean distance > trigger_threshold, False otherwise.
         """
         curr_vec = np.asarray(current.vector, dtype=np.float64)
         last_vec = np.asarray(last.vector, dtype=np.float64)
@@ -170,4 +186,4 @@ class MetaStateGenerator:
             raise ValueError("MetaState vectors must contain finite values")
 
         delta = float(np.linalg.norm(curr_vec - last_vec))
-        return bool(delta > self._trigger_threshold_base)
+        return bool(delta > self.trigger_threshold)
