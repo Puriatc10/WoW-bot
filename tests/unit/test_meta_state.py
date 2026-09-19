@@ -360,3 +360,218 @@ def test_should_trigger_llm_input_validation() -> None:
 
     with pytest.raises(ValueError, match="MetaState vectors must have shape"):
         gen.should_trigger_llm(m_valid, m_bad_shape)
+
+
+# --- Task 3.6 Adaptive Trigger Threshold Tests ---
+
+
+def test_3_6_test_a_initial_threshold() -> None:
+    """Test A — immediately after construction, trigger_threshold == base_threshold."""
+    drives = Drives()
+    oscillators = OscillatorBank()
+    chaos = LorenzAttractor()
+    store = MemoryStore(":memory:")
+    gen = MetaStateGenerator(
+        config=0.3, drives=drives, oscillators=oscillators, chaos=chaos, memory=store
+    )
+
+    assert gen.trigger_threshold == pytest.approx(0.3)
+    assert gen.trigger_threshold == gen.trigger_threshold_base
+
+
+def test_3_6_test_b_getter_purity() -> None:
+    """Test B — repeated reads of trigger_threshold do not alter state or threshold."""
+    drives = Drives()
+    oscillators = OscillatorBank()
+    chaos = LorenzAttractor()
+    store = MemoryStore(":memory:")
+    gen = MetaStateGenerator(
+        config=0.3, drives=drives, oscillators=oscillators, chaos=chaos, memory=store
+    )
+
+    val1 = gen.trigger_threshold
+    val2 = gen.trigger_threshold
+    val3 = gen.trigger_threshold
+    assert val1 == val2 == val3 == pytest.approx(0.3)
+
+
+@pytest.mark.asyncio
+async def test_3_6_test_c_zero_dt(memory_store: MemoryStore) -> None:
+    """Test C — calling step with dt=0 does not advance threshold time."""
+    drives = Drives()
+    oscillators = OscillatorBank()
+    chaos = LorenzAttractor()
+    gen = MetaStateGenerator(
+        config=0.3, drives=drives, oscillators=oscillators, chaos=chaos, memory=memory_store
+    )
+
+    gs = make_dummy_game_state()
+    await gen.step(0.0, gs)
+
+    assert gen.trigger_threshold == pytest.approx(0.3)
+
+
+@pytest.mark.asyncio
+async def test_3_6_test_d_negative_dt_preserves_threshold(
+    memory_store: MemoryStore,
+) -> None:
+    """Test D — negative dt raises error and leaves threshold time unchanged."""
+    drives = Drives()
+    oscillators = OscillatorBank()
+    chaos = LorenzAttractor()
+    gen = MetaStateGenerator(
+        config=0.3, drives=drives, oscillators=oscillators, chaos=chaos, memory=memory_store
+    )
+
+    gs = make_dummy_game_state()
+    await gen.step(1800.0, gs)
+    threshold_at_1800 = gen.trigger_threshold
+    assert threshold_at_1800 == pytest.approx(0.4)
+
+    with pytest.raises(ValueError, match="dt must be non-negative"):
+        await gen.step(-10.0, gs)
+
+    assert gen.trigger_threshold == threshold_at_1800
+
+
+@pytest.mark.asyncio
+async def test_3_6_test_e_f_g_h_checkpoints(memory_store: MemoryStore) -> None:
+    """Tests E, F, G, H — threshold checkpoint values at quarter, half, 3/4, and full periods."""
+    drives = Drives()
+    oscillators = OscillatorBank()
+    chaos = LorenzAttractor()
+    gen = MetaStateGenerator(
+        config=0.3, drives=drives, oscillators=oscillators, chaos=chaos, memory=memory_store
+    )
+    gs = make_dummy_game_state()
+
+    # t = 0 -> 0.3
+    assert gen.trigger_threshold == pytest.approx(0.3, abs=1e-6)
+
+    # Test E: t = 1800 (quarter period) -> base + 0.1 = 0.4
+    await gen.step(1800.0, gs)
+    assert gen.trigger_threshold == pytest.approx(0.4, abs=1e-6)
+
+    # Test F: t = 3600 (half period) -> base = 0.3
+    await gen.step(1800.0, gs)
+    assert gen.trigger_threshold == pytest.approx(0.3, abs=1e-6)
+
+    # Test G: t = 5400 (three-quarter period) -> base - 0.1 = 0.2
+    await gen.step(1800.0, gs)
+    assert gen.trigger_threshold == pytest.approx(0.2, abs=1e-6)
+
+    # Test H: t = 7200 (full period) -> base = 0.3
+    await gen.step(1800.0, gs)
+    assert gen.trigger_threshold == pytest.approx(0.3, abs=1e-6)
+
+
+@pytest.mark.asyncio
+async def test_3_6_test_i_bounded_range(memory_store: MemoryStore) -> None:
+    """Test I — threshold remains bounded in [base - 0.1, base + 0.1] across multiple cycles."""
+    drives = Drives()
+    oscillators = OscillatorBank()
+    chaos = LorenzAttractor()
+    base = 0.35
+    gen = MetaStateGenerator(
+        config=base, drives=drives, oscillators=oscillators, chaos=chaos, memory=memory_store
+    )
+    gs = make_dummy_game_state()
+
+    # Step in 100s increments for over 3 cycles (21,600 seconds)
+    for _ in range(216):
+        await gen.step(100.0, gs)
+        val = gen.trigger_threshold
+        assert base - 0.1 - 1e-9 <= val <= base + 0.1 + 1e-9
+
+
+@pytest.mark.asyncio
+async def test_3_6_test_j_adaptive_trigger_decision(memory_store: MemoryStore) -> None:
+    """Test J — identical MetaState delta produces different trigger decisions across phases."""
+    drives = Drives()
+    oscillators = OscillatorBank()
+    chaos = LorenzAttractor()
+    gen = MetaStateGenerator(
+        config=0.3, drives=drives, oscillators=oscillators, chaos=chaos, memory=memory_store
+    )
+    gs = make_dummy_game_state()
+
+    last_meta = MetaState(
+        vector=np.array([0.2, 0.5, 0.5, 0.5, 0.5]), recent_events=[], timestamp=1.0
+    )
+    # Delta = 0.30
+    curr_meta = MetaState(
+        vector=np.array([0.5, 0.5, 0.5, 0.5, 0.5]), recent_events=[], timestamp=2.0
+    )
+
+    # At t = 1800s, threshold is ~0.4. delta (0.3) < threshold (0.4) -> False
+    await gen.step(1800.0, gs)
+    assert gen.trigger_threshold == pytest.approx(0.4)
+    assert gen.should_trigger_llm(curr_meta, last_meta) is False
+
+    # At t = 5400s (advance another 3600s), threshold is ~0.2. delta (0.3) > threshold (0.2) -> True
+    await gen.step(3600.0, gs)
+    assert gen.trigger_threshold == pytest.approx(0.2)
+    assert gen.should_trigger_llm(curr_meta, last_meta) is True
+
+
+@pytest.mark.asyncio
+async def test_3_6_test_k_strict_boundary(memory_store: MemoryStore) -> None:
+    """Test K — when delta == current threshold, trigger decision is False."""
+    drives = Drives()
+    oscillators = OscillatorBank()
+    chaos = LorenzAttractor()
+    gen = MetaStateGenerator(
+        config=0.3, drives=drives, oscillators=oscillators, chaos=chaos, memory=memory_store
+    )
+
+    # Initial threshold = 0.3
+    last_meta = MetaState(
+        vector=np.array([0.2, 0.5, 0.5, 0.5, 0.5]), recent_events=[], timestamp=1.0
+    )
+    curr_meta = MetaState(
+        vector=np.array([0.5, 0.5, 0.5, 0.5, 0.5]), recent_events=[], timestamp=2.0
+    )
+
+    delta = float(np.linalg.norm(curr_meta.vector - last_meta.vector))
+    assert delta == pytest.approx(0.3)
+    assert gen.should_trigger_llm(curr_meta, last_meta) is False
+
+
+@pytest.mark.asyncio
+async def test_3_6_test_l_deterministic_evolution(memory_store: MemoryStore) -> None:
+    """Test L — two equivalent generators receiving identical dt sequences evolve identically."""
+    gen1 = MetaStateGenerator(
+        config=0.3,
+        drives=Drives(),
+        oscillators=OscillatorBank(seed=10),
+        chaos=LorenzAttractor(),
+        memory=memory_store,
+    )
+    gen2 = MetaStateGenerator(
+        config=0.3,
+        drives=Drives(),
+        oscillators=OscillatorBank(seed=10),
+        chaos=LorenzAttractor(),
+        memory=memory_store,
+    )
+    gs = make_dummy_game_state()
+
+    dt_sequence = [100.0, 250.5, 1800.0, 0.0, 42.0]
+    for dt in dt_sequence:
+        await gen1.step(dt, gs)
+        await gen2.step(dt, gs)
+        assert gen1.trigger_threshold == pytest.approx(gen2.trigger_threshold)
+
+
+def test_3_6_test_m_no_wall_clock_dependence() -> None:
+    """Test M — threshold evolution depends purely on dt and not wall clock time."""
+    drives = Drives()
+    oscillators = OscillatorBank()
+    chaos = LorenzAttractor()
+    store = MemoryStore(":memory:")
+    gen = MetaStateGenerator(
+        config=0.3, drives=drives, oscillators=oscillators, chaos=chaos, memory=store
+    )
+
+    # Threshold without stepping remains 0.3 regardless of wall-clock time passing
+    assert gen.trigger_threshold == pytest.approx(0.3)
