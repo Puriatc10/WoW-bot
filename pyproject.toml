@@ -12,6 +12,7 @@ dependencies = [
     "aiosqlite>=0.20.0",
     "scipy>=1.14.0",
     "matplotlib>=3.9.0",
+    "psutil>=6.0.0",
 ]
 
 [project.optional-dependencies]
