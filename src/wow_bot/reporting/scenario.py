@@ -86,6 +86,7 @@ class ScenarioReportCollector:
 
     meta_state_samples: list[dict[str, Any]] = field(default_factory=list)
     timing_samples_ms: list[float] = field(default_factory=list)
+    timing_samples: list[dict[str, Any]] = field(default_factory=list)
 
     health_transition_count: int = 0
     shutdown_requested: bool = False
@@ -139,15 +140,30 @@ class ScenarioReportCollector:
             "reason": str(reason),
         })
 
-    def on_fsm_tick(self, sim_ts: float, fatigue: float) -> None:
+    def on_fsm_tick(
+        self,
+        sim_ts: float,
+        fatigue: float,
+        chaos_component: float = 0.0,
+        base_ms: int | None = None,
+    ) -> None:
         """Sample synthetic human timing delay for an FSM tick."""
+        used_base_ms = self.base_ms if base_ms is None else base_ms
         sample = human_delay(
-            base_ms=self.base_ms,
+            base_ms=used_base_ms,
             fatigue=fatigue,
-            chaos_component=0.0,
+            chaos_component=chaos_component,
             rng=self._timing_rng,
         )
-        self.timing_samples_ms.append(float(sample))
+        delay_float = float(sample)
+        self.timing_samples_ms.append(delay_float)
+        self.timing_samples.append({
+            "simulation_timestamp": float(sim_ts),
+            "delay_ms": delay_float,
+            "base_ms": int(used_base_ms),
+            "fatigue": float(fatigue),
+            "chaos_component": float(chaos_component),
+        })
 
     def on_idle_intent(self, sim_ts: float, behavior_name: str) -> None:
         """Record symbolic idle behavior intent."""
@@ -178,6 +194,7 @@ class ScenarioReportCollector:
             "unit": "ms",
             "model": "lognormal_simulation",
             "samples_ms": self.timing_samples_ms,
+            "samples": self.timing_samples,
             "count": len(self.timing_samples_ms),
             "mean_ms": float(np.mean(self.timing_samples_ms)) if self.timing_samples_ms else 0.0,
             "std_ms": float(np.std(self.timing_samples_ms)) if self.timing_samples_ms else 0.0,
@@ -280,6 +297,34 @@ def validate_report_dict(report: dict[str, Any]) -> None:
     for idx, sample in enumerate(samples_ms):
         if isinstance(sample, bool) or not isinstance(sample, (int, float)) or not math.isfinite(sample):
             raise ValueError(f"Timing sample #{idx} is non-finite: {sample!r}")
+
+    timing_samples = timing.get("samples", [])
+    if timing_samples is not None:
+        if not isinstance(timing_samples, list):
+            raise ValueError(f"timing.samples must be a list, got {type(timing_samples).__name__}")
+        for idx, ts_sample in enumerate(timing_samples):
+            if not isinstance(ts_sample, dict):
+                raise ValueError(f"Timing detailed sample #{idx} must be dict, got {ts_sample!r}")
+
+            sim_ts = ts_sample.get("simulation_timestamp")
+            if isinstance(sim_ts, bool) or not isinstance(sim_ts, (int, float)) or not math.isfinite(sim_ts):
+                raise ValueError(f"Timing detailed sample #{idx} invalid simulation_timestamp: {sim_ts!r}")
+
+            delay = ts_sample.get("delay_ms")
+            if isinstance(delay, bool) or not isinstance(delay, (int, float)) or not math.isfinite(delay) or delay <= 0:
+                raise ValueError(f"Timing detailed sample #{idx} invalid delay_ms: {delay!r}")
+
+            b_ms = ts_sample.get("base_ms")
+            if isinstance(b_ms, bool) or not isinstance(b_ms, int) or b_ms <= 0:
+                raise ValueError(f"Timing detailed sample #{idx} invalid base_ms: {b_ms!r}")
+
+            fat = ts_sample.get("fatigue")
+            if isinstance(fat, bool) or not isinstance(fat, (int, float)) or not math.isfinite(fat) or fat < 0.0 or fat > 1.0:
+                raise ValueError(f"Timing detailed sample #{idx} invalid fatigue: {fat!r}")
+
+            chaos = ts_sample.get("chaos_component")
+            if isinstance(chaos, bool) or not isinstance(chaos, (int, float)) or not math.isfinite(chaos) or chaos < -1.0 or chaos > 1.0:
+                raise ValueError(f"Timing detailed sample #{idx} invalid chaos_component: {chaos!r}")
 
 
 def write_report_atomically(report: dict[str, Any], output_path: str | Path) -> None:

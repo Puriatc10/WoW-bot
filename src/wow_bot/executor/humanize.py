@@ -6,6 +6,7 @@ they do not execute waits (sleeps), interact with the operating system, or
 call input controllers.
 
 Public API:
+    - :func:`delay_distribution_parameters`
     - :func:`human_delay`
     - :func:`human_error_probability`
     - :func:`jitter_coordinates`
@@ -57,6 +58,40 @@ def _validate_float_range(
     return float_val
 
 
+def delay_distribution_parameters(
+    base_ms: int = 200,
+    fatigue: float = 0.5,
+    chaos_component: float = 0.0,
+) -> tuple[float, float]:
+    """Calculate log-normal mu and sigma parameters for given timing parameters.
+
+    Formula:
+        sigma = 0.4 + 0.2 * chaos_component + 0.3 * fatigue
+        mu = log(base_ms)
+
+    Args:
+        base_ms: Base median delay in milliseconds (> 0, strictly integer).
+        fatigue: Fatigue level in [0.0, 1.0].
+        chaos_component: Lorenz chaos component in [-1.0, 1.0].
+
+    Returns:
+        Tuple of (mu, sigma) floats.
+
+    Raises:
+        ValueError: If any input parameter fails validation.
+    """
+    valid_base_ms = _validate_int(base_ms, "base_ms")
+    if valid_base_ms <= 0:
+        raise ValueError(f"base_ms must be strictly positive (> 0), got {valid_base_ms}")
+
+    valid_fatigue = _validate_float_range(fatigue, "fatigue", 0.0, 1.0)
+    valid_chaos = _validate_float_range(chaos_component, "chaos_component", -1.0, 1.0)
+
+    sigma = 0.4 + 0.2 * valid_chaos + 0.3 * valid_fatigue
+    mu = float(np.log(valid_base_ms))
+    return mu, sigma
+
+
 def human_delay(
     base_ms: int = 200,
     fatigue: float = 0.5,
@@ -84,15 +119,11 @@ def human_delay(
     Raises:
         ValueError: If any input parameter fails validation.
     """
-    valid_base_ms = _validate_int(base_ms, "base_ms")
-    if valid_base_ms <= 0:
-        raise ValueError(f"base_ms must be strictly positive (> 0), got {valid_base_ms}")
-
-    valid_fatigue = _validate_float_range(fatigue, "fatigue", 0.0, 1.0)
-    valid_chaos = _validate_float_range(chaos_component, "chaos_component", -1.0, 1.0)
-
-    sigma = 0.4 + 0.2 * valid_chaos + 0.3 * valid_fatigue
-    mu = float(np.log(valid_base_ms))
+    mu, sigma = delay_distribution_parameters(
+        base_ms=base_ms,
+        fatigue=fatigue,
+        chaos_component=chaos_component,
+    )
 
     generator = rng if rng is not None else np.random.default_rng()
     raw_delay = float(generator.lognormal(mean=mu, sigma=sigma))
