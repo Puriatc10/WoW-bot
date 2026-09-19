@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncGenerator
+
 import numpy as np
 import pytest
 
@@ -34,7 +36,7 @@ def make_dummy_game_state(
 
 
 @pytest.fixture
-async def memory_store() -> MemoryStore:
+async def memory_store() -> AsyncGenerator[MemoryStore, None]:
     """Fixture providing an initialized in-memory MemoryStore."""
     store = MemoryStore(":memory:")
     await store.init()
