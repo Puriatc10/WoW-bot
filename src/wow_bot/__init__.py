@@ -1,0 +1,1 @@
+"""WoW-Bot research prototype package."""

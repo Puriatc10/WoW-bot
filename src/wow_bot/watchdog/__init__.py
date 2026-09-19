@@ -1,0 +1,1 @@
+"""Watchdog layer: independent health monitoring and emergency stop."""

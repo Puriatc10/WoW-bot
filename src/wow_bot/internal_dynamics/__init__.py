@@ -1,0 +1,1 @@
+"""Internal dynamics: drives, oscillators, chaos, memory, and MetaState generation."""

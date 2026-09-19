@@ -1,0 +1,1 @@
+"""Perception layer: converts raw input into GameState. Mocked until Phase 9."""

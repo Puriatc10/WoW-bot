@@ -1,0 +1,1 @@
+"""Strategist layer: local LLM client, prompts, parsing, and orchestration."""

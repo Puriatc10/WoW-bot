@@ -1,0 +1,1 @@
+"""Executor layer: controller I/O, human-like timing, FSM, idle behaviors, and path planning."""
