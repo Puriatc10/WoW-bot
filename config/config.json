@@ -1,0 +1,29 @@
+{
+  "llm": {
+    "base_url": "http://127.0.0.1:11434/v1/",
+    "api_key": "ollama",
+    "model": "qwen2.5:7b",
+    "timeout_seconds": 60,
+    "max_retries": 3
+  },
+  "internal_dynamics": {
+    "update_interval_ms": 100,
+    "lorenz_sigma": 10,
+    "lorenz_rho": 28,
+    "lorenz_beta": 2.667,
+    "lorenz_dt": 0.001,
+    "trigger_threshold_base": 0.3,
+    "memory_db_path": "data/memory.db"
+  },
+  "executor": {
+    "human_delay_base_ms": 200,
+    "human_delay_sigma_base": 0.4,
+    "dry_run": true
+  },
+  "logging": {
+    "level": "INFO",
+    "log_file": "logs/bot.log",
+    "rotation": "1 day",
+    "retention": "7 days"
+  }
+}
