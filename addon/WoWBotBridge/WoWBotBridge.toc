@@ -1,0 +1,6 @@
+## Interface: 30300
+## Title: WoWBotBridge
+## Notes: Exports player/unit state for external Python controller (private server use only)
+## SavedVariables: WBB_State
+
+WoWBotBridge.lua
