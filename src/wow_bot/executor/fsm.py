@@ -15,6 +15,7 @@ Public API:
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
 from enum import Enum, auto
 from typing import Any, Final
 
@@ -55,6 +56,8 @@ class ExecutorFSM:
         config: ExecutorConfig | Settings | dict[str, Any] | None,
         controller: Controller,
         strategy: Strategy,
+        *,
+        on_transition: Callable[[float, State, State, str], None] | None = None,
     ) -> None:
         """Initialize ExecutorFSM in IDLE state without executing controller commands or reading clock."""
         if not isinstance(controller, Controller):
@@ -70,6 +73,7 @@ class ExecutorFSM:
         self._controller = controller
         self._strategy = strategy
         self._state: State = State.IDLE
+        self._on_transition = on_transition
         self._last_timestamp: float | None = None
         self._last_action_signature: str | None = None
         self._action_started_at: float | None = None
@@ -130,6 +134,12 @@ class ExecutorFSM:
 
         if new_state in (State.FLEEING, State.STUCK_RECOVERY):
             await self._controller.stop_all()
+
+        if self._on_transition is not None:
+            try:
+                self._on_transition(timestamp, old_state, new_state, reason)
+            except Exception as exc:  # noqa: BLE001
+                log.error(f"Error in FSM transition callback: {exc}")
 
     def _validate_timestamp(self, raw_ts: object) -> float:
         """Validate tick timestamp parameter and return it as a finite float."""

@@ -43,6 +43,8 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
+import numpy as np
+
 from wow_bot.executor.controller import Controller
 from wow_bot.executor.fsm import ExecutorFSM
 from wow_bot.executor.idle_behaviors import IdleBehaviorEngine
@@ -52,6 +54,7 @@ from wow_bot.internal_dynamics.memory import MemoryStore
 from wow_bot.internal_dynamics.meta_state import MetaStateGenerator
 from wow_bot.internal_dynamics.oscillators import OscillatorBank
 from wow_bot.mocks.mock_perception import MockPerception
+from wow_bot.reporting.scenario import PipelineObserver
 from wow_bot.shared.config import Settings, get_settings
 from wow_bot.shared.events import DEATH
 from wow_bot.shared.interfaces import GameState, MetaState, Strategy
@@ -94,6 +97,7 @@ class RuntimeComponents:
     perception: MockPerception
     watchdog: WatchdogProcess
     idle_engine: IdleBehaviorEngine
+    observer: PipelineObserver | None = None
 
 
 def _put_latest[T](queue: asyncio.Queue[T], item: T) -> None:
@@ -112,12 +116,16 @@ def _put_latest[T](queue: asyncio.Queue[T], item: T) -> None:
 async def build_runtime(
     config: Settings | None = None,
     scenario: str | None = None,
+    observer: PipelineObserver | None = None,
+    seed: int | None = None,
 ) -> RuntimeComponents:
     """Construct and initialize all pipeline runtime components.
 
     Args:
         config: Optional Settings instance (defaults to get_settings()).
         scenario: Optional MockPerception scenario name.
+        observer: Optional PipelineObserver for scenario instrumentation.
+        seed: Optional RNG seed for scenario determinism.
 
     Returns:
         RuntimeComponents instance with ready components.
@@ -151,7 +159,8 @@ async def build_runtime(
     )
 
     controller = Controller(dry_run=settings.executor.dry_run)
-    perception = MockPerception(scenario=scenario)
+    perception_rng = np.random.default_rng(seed) if seed is not None else None
+    perception = MockPerception(scenario=scenario, rng=perception_rng)
     watchdog = WatchdogProcess()
     idle_engine = IdleBehaviorEngine()
 
@@ -168,6 +177,7 @@ async def build_runtime(
         perception=perception,
         watchdog=watchdog,
         idle_engine=idle_engine,
+        observer=observer,
     )
 
 
@@ -182,6 +192,12 @@ async def perception_loop(
 
     while not shutdown_event.is_set():
         game_state = await components.perception.get_state()
+        if components.observer is not None:
+            try:
+                components.observer.on_game_state(game_state)
+            except Exception as exc:
+                logger.error(f"Observer error in on_game_state: {exc}")
+                raise
         await perception_queue.put(game_state)
         await asyncio.sleep(interval_seconds)
 
@@ -225,6 +241,13 @@ async def dynamics_loop(
         meta_state = await components.meta_state_generator.step(dt, game_state)
         snapshot = PipelineSnapshot(game_state=game_state, meta_state=meta_state)
 
+        if components.observer is not None:
+            try:
+                components.observer.on_meta_state(meta_state)
+            except Exception as exc:
+                logger.error(f"Observer error in on_meta_state: {exc}")
+                raise
+
         # Publish ordered snapshot to Executor queue
         await executor_queue.put(snapshot)
 
@@ -235,9 +258,23 @@ async def dynamics_loop(
         runtime_state["progress_token"] += 1
         runtime_state["last_sim_timestamp"] = float(game_state.timestamp)
 
+        if components.observer is not None:
+            try:
+                components.observer.on_progress_step()
+            except Exception as exc:
+                logger.error(f"Observer error in on_progress_step: {exc}")
+                raise
+
         # Forward explicit canonical death events to Watchdog IPC queue
         for event in game_state.events:
             if event.type == DEATH:
+                if components.observer is not None:
+                    try:
+                        components.observer.on_death_event(float(event.timestamp))
+                    except Exception as exc:
+                        logger.error(f"Observer error in on_death_event: {exc}")
+                        raise
+
                 try:
                     components.watchdog.message_queue.put_nowait(
                         DeathEventMessage(simulation_timestamp=float(event.timestamp))
@@ -307,6 +344,13 @@ async def strategist_loop(
                 )
 
                 prev_strategy_obj = current_strategy
+                if components.observer is not None:
+                    try:
+                        components.observer.on_strategy_attempt(sim_ts)
+                    except Exception as exc:
+                        logger.error(f"Observer error in on_strategy_attempt: {exc}")
+                        raise
+
                 try:
                     new_strategy = await components.strategist.generate_strategy(
                         snapshot.meta_state, dynamic_context
@@ -318,6 +362,13 @@ async def strategist_loop(
                             f"Genuinely new Strategy received: goal={new_strategy.goal!r} "
                             f"valid_until={new_strategy.valid_until:.3f}"
                         )
+                        if components.observer is not None:
+                            try:
+                                components.observer.on_strategy_accepted(new_strategy, sim_ts)
+                            except Exception as exc:
+                                logger.error(f"Observer error in on_strategy_accepted: {exc}")
+                                raise
+
                         next_refresh_allowed_at = 0.0
                         last_planned_meta_state = snapshot.meta_state
                         _put_latest(strategy_queue, new_strategy)
@@ -325,6 +376,13 @@ async def strategist_loop(
                         logger.warning(
                             "Strategy generation returned fallback/same strategy object. Setting 10s cooldown."
                         )
+                        if components.observer is not None:
+                            try:
+                                components.observer.on_strategy_fallback(sim_ts)
+                            except Exception as exc:
+                                logger.error(f"Observer error in on_strategy_fallback: {exc}")
+                                raise
+
                         next_refresh_allowed_at = sim_ts + STRATEGIST_RETRY_COOLDOWN_SECONDS
 
                 except Exception as exc:  # noqa: BLE001
@@ -332,6 +390,13 @@ async def strategist_loop(
                         f"Strategy generation failed without fallback: {type(exc).__name__}: {exc}. "
                         f"Setting {STRATEGIST_RETRY_COOLDOWN_SECONDS}s cooldown."
                     )
+                    if components.observer is not None:
+                        try:
+                            components.observer.on_strategy_fallback(sim_ts)
+                        except Exception as exc:
+                            logger.error(f"Observer error in on_strategy_fallback: {exc}")
+                            raise
+
                     next_refresh_allowed_at = sim_ts + STRATEGIST_RETRY_COOLDOWN_SECONDS
 
         # Task 5.4 idle intent integration (symbolic evaluation)
@@ -343,6 +408,12 @@ async def strategist_loop(
                 f"Symbolic idle behavior intent observed: {idle_intent.behavior.name} "
                 f"(emote={idle_intent.emote})"
             )
+            if components.observer is not None:
+                try:
+                    components.observer.on_idle_intent(sim_ts, idle_intent.behavior.name)
+                except Exception as exc:
+                    logger.error(f"Observer error in on_idle_intent: {exc}")
+                    raise
 
         strategist_queue.task_done()
 
@@ -371,10 +442,19 @@ async def executor_loop(
         logger.info("Executor loop exiting without FSM initialization (shutdown requested).")
         return
 
+    def _fsm_on_transition(ts: float, from_st: Any, to_st: Any, reason: str) -> None:
+        if components.observer is not None:
+            components.observer.on_fsm_transition(
+                ts, from_st.name if hasattr(from_st, "name") else str(from_st),
+                to_st.name if hasattr(to_st, "name") else str(to_st),
+                reason,
+            )
+
     fsm = ExecutorFSM(
         config=components.config.executor,
         controller=components.controller,
         strategy=initial_strategy,
+        on_transition=_fsm_on_transition,
     )
     runtime_state["fsm_ref"] = fsm
     logger.info(f"ExecutorFSM initialized with initial strategy goal={initial_strategy.goal!r}.")
@@ -396,6 +476,13 @@ async def executor_loop(
             continue
 
         await fsm.tick(snapshot.game_state)
+        if components.observer is not None:
+            try:
+                fatigue_val = float(snapshot.meta_state.vector[1])
+                components.observer.on_fsm_tick(float(snapshot.game_state.timestamp), fatigue_val)
+            except Exception as exc:
+                logger.error(f"Observer error in on_fsm_tick: {exc}")
+                raise
         executor_queue.task_done()
 
 
