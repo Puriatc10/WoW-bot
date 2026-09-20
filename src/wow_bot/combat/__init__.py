@@ -2,6 +2,13 @@
 Combat subsystem for WoW-bot.
 """
 
+from wow_bot.combat.loop import (
+    CombatLoop,
+    CombatLoopConfig,
+    CombatLoopError,
+    CombatMetaView,
+    CombatStateView,
+)
 from wow_bot.combat.rotation import (
     CombatStateLike,
     Condition,
@@ -22,7 +29,12 @@ from wow_bot.combat.targeting import (
 )
 
 __all__ = [
+    "CombatLoop",
+    "CombatLoopConfig",
+    "CombatLoopError",
+    "CombatMetaView",
     "CombatStateLike",
+    "CombatStateView",
     "Condition",
     "PriorityMetric",
     "RotationConfig",
