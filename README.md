@@ -2,7 +2,19 @@
 
 A **mock-first, dry-run academic research prototype** for studying layered autonomous-agent architecture, internal behavioral dynamics, reproducible simulation, local LLM planning, deterministic execution-state machines, supervision, and long-running statistical analysis.
 
-> **Scope boundary:** development and evaluation use synthetic `GameState` inputs, `MockPerception`, prerecorded fixtures, and isolated environments under the researcher's control. The current executor is simulation-only. This repository is not intended for deployment against official game services.
+---
+
+## Scope
+
+This is a research prototype for studying LLM-driven agent architectures
+under human-like timing and reflex constraints.
+
+- Default mode (`MOCK_MODE`) is fully synthetic and runs in CI.
+- `LAB_MODE` runs against a private, self-owned server on an isolated
+  network. It never connects to retail or third-party servers.
+- See `LAB_CONSTRAINTS.md` for the hard boundaries.
+- Anti-cheat bypass, memory inspection, and binary modification are
+  explicitly out of scope.
 
 ---
 

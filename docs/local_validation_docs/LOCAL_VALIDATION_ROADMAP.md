@@ -728,3 +728,45 @@ Environment:
 9.1:
   PENDING
 ```
+---
+
+### Phase L0 — Lab Setup
+- VM + private server + unmodified client, no automation.
+- Manual session recording for reference data.
+- Acceptance: server and client run stably for 1 hour.
+
+### Phase L1 — Capture Only
+- dxcam/mss capture at 20 Hz, write frames to disk.
+- Acceptance: <1% dropped frames over 10 minutes.
+
+### Phase L2 — Vision v0
+- Health/mana bars and player pose on minimap.
+- Acceptance: >95% precision on recorded fixtures.
+
+### Phase L3 — State Builder
+- Produce GameState from vision; run existing pipeline in dry-run.
+- Acceptance: pipeline completes without schema errors on 10k frames.
+
+### Phase L4 — Actuation v0
+- Keyboard-only movement in lab.
+- Acceptance: reach a target waypoint 9/10 times.
+
+### Phase L5 — Reflex Layer
+- 10 Hz loop, abort, focus guard, stuck detection.
+- Acceptance: kill switch latency <100 ms over 100 trials.
+
+### Phase L6 — Combat v0
+- Single-target rotation on a harmless mob.
+- Acceptance: kill a training dummy 10/10 times.
+
+### Phase L7 — Navigation and Farm Loop
+- Waypoint-based farm with inventory check.
+- Acceptance: 1-hour farm loop without hard_stuck.
+
+### Phase L8 — Humanizer on Real Actuation
+- Apply Task 8.2 model to real input timing.
+- Acceptance: PIT/KS tests pass on recorded intervals.
+
+### Phase L9 — Soak
+- 24-hour run with telemetry.
+- Acceptance: zero crashes, no memory growth trend.

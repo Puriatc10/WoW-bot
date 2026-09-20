@@ -543,7 +543,51 @@ Critical rules:
 
 ---
 
-## 13. Task 7.1 Pipeline Invariants
+## 13. Execution Modes
+
+Two modes exist. Default is MOCK_MODE.
+
+### MOCK_MODE (default)
+- Perception: MockPerception produces synthetic GameState.
+- Actuation: SimulationController records symbolic intents only.
+- `dry_run=False` MUST be rejected.
+- No OS input, no screen capture, no network to game server.
+- Runs in CI.
+
+### LAB_MODE (opt-in)
+- Activated only by setting `LAB_MODE=1` AND a valid
+  `LAB_SERVER_ALLOWLIST` entry AND a passing network isolation check.
+- Perception: RealPerception (capture -> vision -> GameState).
+- Actuation: RealActuator (symbolic intent -> synthetic input).
+- Reflex layer runs at 10-20 Hz. LLM does NOT participate in reflex.
+- Kill switch armed on startup. Session log path is immutable.
+- MUST NOT run in CI. MUST NOT run unattended.
+
+## Layering Rules (both modes)
+
+- `GameState` schema is the single contract between perception and the
+  rest of the pipeline. Producers may differ; consumers MUST NOT.
+- Fast reflex and slow planning MUST be separate loops.
+  - Fast loop: reflex layer, 10-20 Hz, no LLM, deterministic given
+    state + timing seed.
+  - Slow loop: strategist, seconds-scale, LLM-backed, may be
+    nondeterministic across runs.
+- World Model (map, entities, routes) is separate from Internal
+  Dynamics (drives, oscillators, chaos). They MUST NOT share tables.
+
+## Forbidden (unchanged, now also enforced in LAB_MODE)
+
+- pynput/pyautogui outside `RealActuator`.
+- Cloud LLM calls. Local Ollama only.
+- Global `np.random.seed`. Use per-component generators.
+- Truncating or deleting logs on error.
+- Reading or writing game process memory.
+- Modifying the game binary.
+- Any connection to a server outside `LAB_SERVER_ALLOWLIST`.
+
+---
+
+## 14. Task 7.1 Pipeline Invariants
 
 Expected logical loops:
 
@@ -592,7 +636,7 @@ Task 7.1 local runtime acceptance is **not** established by static/unit checks.
 
 ---
 
-## 14. Task 7.2 Scenario Report Invariants
+## 15. Task 7.2 Scenario Report Invariants
 
 Report schema version:
 
@@ -635,7 +679,7 @@ Instrumentation is passive and must not affect runtime decisions.
 
 ---
 
-## 15. Task 8.1 Scientific Contract
+## 16. Task 8.1 Scientific Contract
 
 - consume structured report, not logs;
 - each drive analyzed independently;
@@ -651,7 +695,7 @@ Instrumentation is passive and must not affect runtime decisions.
 
 ---
 
-## 16. Task 8.2 Scientific Contract
+## 17. Task 8.2 Scientific Contract
 
 Primary exact model test:
 
@@ -686,7 +730,7 @@ Legacy reports without per-sample model parameters may receive descriptive analy
 
 ---
 
-## 17. Task 8.3 Soak Contract
+## 18. Task 8.3 Soak Contract
 
 Harness only; actual 24-hour execution is local.
 
@@ -712,7 +756,7 @@ until an explicit validated threshold is approved.
 
 ---
 
-## 18. Phase 7–8 Validation Policy
+## 19. Phase 7–8 Validation Policy
 
 For Tasks 7.1–8.3:
 
@@ -724,7 +768,7 @@ For Tasks 7.1–8.3:
 
 ---
 
-## 19. Task 9.1
+## 20. Task 9.1
 
 ```text
 PENDING
@@ -734,7 +778,7 @@ Do not implement until the external perception dependency is delivered and expli
 
 ---
 
-## 20. Coding Quality
+## 21. Coding Quality
 
 - Python 3.12+
 - strict typing
@@ -750,7 +794,7 @@ Do not implement until the external perception dependency is delivered and expli
 
 ---
 
-## 21. Definition of Done
+## 22. Definition of Done
 
 ### Tasks 0–6
 
@@ -780,7 +824,7 @@ Final acceptance requires `LOCAL_VALIDATION_ROADMAP.md`.
 
 ---
 
-## 22. Reviewer Escalation
+## 23. Reviewer Escalation
 
 If a reviewer finds a mismatch:
 
