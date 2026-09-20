@@ -1,842 +1,313 @@
-# AGENTS.md — Project Context and Rules for Coding / Review Agents
+# AGENTS.md
 
-> Read this file completely before modifying or reviewing the repository.
-
----
-
-## 1. Project Identity
-
-**Project:** WoW-Bot Research Prototype  
-**Mode:** mock-first, dry-run, controlled simulation  
-**Runtime:** Python 3.12+, asyncio  
-**LLM:** local Ollama / Qwen 2.5 7B  
-**Current specification:** frozen through Task 8.3  
-**Task 9.1:** PENDING
-
-The project studies software architecture, dynamical systems, local high-level planning, deterministic state machines, reproducible simulation, supervision, and statistical analysis.
-
-Development and validation must remain on synthetic/mock/prerecorded/isolated inputs. The current executor must not generate physical OS input.
+Operating rules for any agent (human or automated) contributing to this
+repository. This file is normative. If anything here conflicts with a
+task prompt, the conflict MUST be resolved by updating this file first,
+not by silently diverging.
 
 ---
 
-## 2. Source-of-Truth Order
+## 1. What This Project Is
 
-For intended behavior:
+A research prototype for studying LLM-driven agent architectures under
+human-like timing and reflex constraints. The project supports two
+execution modes:
 
-1. `AGENTS.md` — global architecture and invariants
-2. `ROADMAP.md` — task-specific contracts and acceptance
-3. `LOCAL_VALIDATION_ROADMAP.md` — local-only runtime/scientific acceptance for Tasks 7.1–8.3
-4. `REVIEWER_GUIDE.md` — audit procedure and required evidence
-5. `README.md` — overview
+- **MOCK_MODE** (default): fully synthetic. Runs in CI. No OS input, no
+  screen capture, no network to any game server.
+- **LAB_MODE** (opt-in): runs against a private, self-owned server on an
+  isolated network. Real actuation, real reflex, real navigation.
+  Perception remains mocked in this phase of the roadmap.
 
-The actual code is the subject being evaluated against these contracts.
+**Non-goals, permanently out of scope:**
+- Any connection to retail WoW, Blizzard services, or any third-party
+  server the operator does not own.
+- Any form of anti-cheat bypass, evasion, or detection avoidance.
+- Any read/write of game process memory, DLL injection, syscall hooking,
+  or binary modification.
 
-If implementation and documentation conflict, do not silently reinterpret either side. Report the conflict with file/symbol evidence.
-
----
-
-## 3. Agent Modes
-
-### Coding mode
-
-- work on exactly one requested task;
-- inspect its dependencies before editing;
-- make the smallest task-scoped change;
-- preserve stable contracts;
-- add behavioral evidence where appropriate;
-- do not start the next task automatically.
-
-### Reviewer mode
-
-- do not modify code unless explicitly asked;
-- audit the repository against `ROADMAP.md`;
-- distinguish implementation defects from local-validation-pending items;
-- never claim a local acceptance gate passed without artifacts/evidence.
+See `LAB_CONSTRAINTS.md` for the full boundary specification.
 
 ---
 
-## 4. Architecture
+## 2. Source of Truth
 
-```text
-MockPerception → GameState
-                     │
-                     ▼
-              Internal Dynamics
-                     │ MetaState
-                     ▼
-                 Strategist
-                     │ Strategy
-                     ▼
-                ExecutorFSM
-                     │
-            simulation/dry-run only
+The following documents are authoritative. Read them before starting any
+task.
 
-Runtime health ──→ independent Watchdog ──→ shutdown request
+| Document | Purpose |
+|---|---|
+| `LAB_PHASE_ROADMAP.md` | **The** phase and task breakdown. Single source for what to build next. |
+| `LAB_CONSTRAINTS.md` | Hard boundaries of LAB_MODE. Normative. |
+| `ARCHITECTURE.md` | Layer table and data flow (both modes). |
+| `PERCEPTION.md` | RealPerception design (future; not in current roadmap). |
+| `ACTUATION.md` | RealActuator design. |
+| `SAFETY.md` | Safety, kill switch, recovery, log integrity. |
+| `LOCAL_VALIDATION_ROADMAP.md` | Original mock-phase validation tasks (8.x). |
+| `README.md` | Project overview and scope statement. |
 
-Pipeline observer ──→ Scenario Report ──→ offline analysis
-```
+If any of these files disagree, the order of precedence is:
 
-### Dependency direction
+1. `LAB_CONSTRAINTS.md`
+2. `LAB_PHASE_ROADMAP.md`
+3. `AGENTS.md` (this file)
+4. `ARCHITECTURE.md`
+5. Everything else.
 
-- Perception produces `GameState`.
-- Internal Dynamics consumes `GameState`, produces `MetaState`.
-- Strategist consumes `MetaState` + explicit context, produces `Strategy`.
-- Executor consumes `GameState` + `Strategy`.
-- Watchdog consumes health metadata, not full domain objects.
-- Reporting is passive.
-- Analysis consumes report files and does not mutate runtime behavior.
-
-Avoid hidden cross-layer dependencies and shared mutable global state.
+Any change to a higher-precedence file MUST be reflected downward.
 
 ---
 
-## 5. Stable Interface Contracts
+## 3. Execution Modes
 
-### Canonical drive order
+### 3.1 MOCK_MODE (default)
 
-```text
-[hunger, fatigue, curiosity, aggression, social]
-```
-
-Never reorder this vector silently.
-
-### Strategy
-
-Frozen fields:
-
-```text
-goal
-region
-risk_tolerance
-priority
-constraints
-valid_until
-raw_llm_output = ""
-```
-
-Frozen goal vocabulary:
-
-```text
-farm_herbs
-grind_humans
-explore
-flee
-```
-
-### Contract evolution
-
-Existing shared fields:
-
-- must not be removed;
-- must not be renamed;
-- must not change meaning silently.
-
-Additive fields must be optional with safe defaults unless an explicit coordinated contract change is approved.
-
----
-
-## 6. Non-Negotiable Runtime Boundaries
-
-### 6.1 Simulation Controller only
-
-The current Controller is a dry-run command recorder.
-
-Required:
-
-```text
-dry_run=True
-```
-
-Unsupported:
-
-```text
-dry_run=False
-```
-
-Do not add/use physical-input libraries or APIs such as:
-
-```text
-pynput
-pyautogui
-keyboard
-mouse
-DirectInput
-Win32 input APIs
-Quartz input APIs
-xdotool
-uinput
-```
-
-### 6.2 No direct game-process interaction
-
-Do not add:
-
-- DLL injection;
-- process memory reading/writing;
-- game hooks;
-- addon manipulation;
-- game-file manipulation;
-- official-service deployment/validation.
-
-### 6.3 Local network boundary
-
-Runtime LLM traffic is local to Ollama. Do not introduce cloud LLM calls as a hidden fallback.
-
-### 6.4 Preserve evidence
-
-Do not delete/truncate logs or reports on failure. Emergency paths preserve diagnostic evidence.
-
----
-
-## 7. Randomness and Determinism Rules
-
-Randomness is allowed only where a task contract explicitly defines a stochastic simulation.
-
-Required practices:
-
-- use injectable `np.random.Generator`;
-- use fixed seeds in tests/reproducible experiments;
-- avoid global `np.random.seed`;
-- do not search seeds to make statistical acceptance pass.
-
-Deterministic components such as FSM and Watchdog health classification must remain deterministic for identical input/clock sequences.
-
----
-
-## 8. Clock-Domain Rules
-
-### Simulation time
-
-Use `GameState.timestamp` for:
-
-- Dynamics `dt`;
-- adaptive LLM threshold;
-- Strategy expiry;
-- Strategist retry cooldown;
-- deterministic scenario-domain calculations.
-
-### Monotonic operational time
-
-Use `time.monotonic()` for:
-
-- heartbeat liveness;
-- progress stall;
-- Watchdog recovery windows;
-- soak duration/resource sampling.
-
-Never silently substitute one clock for the other.
-
----
-
-## 9. Internal Dynamics Invariants
-
-### Drives
-
-- shape `(5,)`;
-- `float64`;
-- values remain `[0,1]`;
-- baseline around `0.5`;
-- event effects come from canonical registry;
-- decay trends back toward baseline;
-- callers must not receive a mutable reference that corrupts internal state.
-
-### Oscillators
-
-Frozen periods:
-
-```text
-5h, 90m, 20m, 5m, 1m
-```
-
-Frozen amplitudes:
-
-```text
-0.15, 0.08, 0.05, 0.03, 0.01
-```
-
-Seeded phase initialization; no claim that oscillators alone mathematically guarantee 1/f.
-
-### Lorenz
-
-- RK4;
-- canonical Lorenz equations;
-- deterministic;
-- default `dt` around `0.001` unless the approved config says equivalent;
-- finite bounded expected trajectory;
-- deterministic projection/normalization.
-
-### Memory
-
-- async SQLite via `aiosqlite`;
-- vectors stored safely, not with pickle;
-- JSON event data;
-- deterministic nearest-neighbor/tie behavior;
-- explicit close lifecycle.
-
-### MetaState step ordering
-
-Expected conceptual order:
-
-```text
-chaos
-→ oscillators
-→ drives.step
-→ apply events
-→ decay
-→ persist important events
-→ construct MetaState
-```
-
-Adaptive trigger:
-
-```text
-threshold(t) = base + 0.1*sin(2π*t/7200)
-```
-
-using simulated elapsed time.
-
----
-
-## 10. Strategist Invariants
-
-### LLM Client
-
-- `openai.AsyncOpenAI`;
-- `httpx.AsyncClient(trust_env=False)`;
-- local endpoint only;
-- SDK retries disabled if custom retry policy owns retries;
-- expected transient failures retried narrowly;
-- cancellation preserved;
-- explicit lifecycle close;
-- no full prompt/raw response/secret logging.
-
-### Prompt layer
-
-Prompt construction is pure:
-
-- no network;
-- no database;
-- no wall-clock read;
-- no randomness.
-
-`DynamicContext` supplies explicit runtime context.
-
-### Parser
-
-The current parser contract is strict.
-
-Expected top-level fields:
-
-```text
-reasoning
-goal
-region
-risk_tolerance
-priority
-constraints
-```
-
-`reasoning` is diagnostic and is not a Strategy field.
-
-Parser rules:
-
-- strict JSON contract;
-- narrow fenced-JSON recovery;
-- reject missing/extra fields;
-- reject NaN/Infinity;
-- reject bool where a real numeric/int is required;
-- validate supported constraints;
-- no silent coercion/repair;
-- no LLM retry from parser;
-- `valid_until` supplied explicitly by caller;
-- failures raise the parser's narrow error type.
-
-### Orchestrator
-
-- one explicit generation request → at most one logical LLM query from orchestrator;
-- no hidden orchestrator retry;
-- expected refresh failure + existing previous Strategy → return the **same Strategy object** unchanged;
-- no previous Strategy → propagate expected failure;
-- cancellation/programming errors propagate;
-- explicit `generate_strategy` means replan; it does not auto-skip solely because strategy is unexpired.
-
----
-
-## 11. Executor Invariants
-
-### Controller
-
-Simulation-only command history.
-
-`press_key`, `move_mouse`, `click`, and `stop_all` must not perform OS input.
-
-### Timing model
-
-```text
-sigma = 0.4 + 0.2*chaos_component + 0.3*fatigue
-mu = log(base_ms)
-delay = clip(LogNormal(mu, sigma), 50, 2000)
-```
-
-- returns simulated milliseconds;
-- no sleep;
-- no Controller call;
-- no global RNG.
-
-Error probability:
-
-```text
-0.02 + 0.05*fatigue + 0.03*(1-curiosity)
-```
-
-Canonical indices:
-
-```text
-fatigue = vector[1]
-curiosity = vector[2]
-```
-
-Actual formula range is `[0.02, 0.10]`; do not stretch it artificially to `0.15`.
-
-### FSM
-
-States exactly:
-
-```text
-IDLE
-SCANNING
-MOVING_TO_TARGET
-COMBAT
-LOOTING
-FLEEING
-STUCK_RECOVERY
-```
-
-Initial state:
-
-```text
-IDLE
-```
-
-Flee threshold:
-
-```text
-0.60 - 0.40*risk_tolerance
-```
-
-Enter flee when:
-
-```text
-in_combat and hp_pct <= threshold
-```
-
-No automatic flee solely for low HP outside combat.
-
-Stuck detection:
-
-- only movement-like intent;
-- `GameState.timestamp`;
-- exact threshold `>= 5.0s`;
-- changed action resets timer;
-- leaving movement clears timer;
-- recovery clears tracker;
-- entry to FLEEING/STUCK_RECOVERY may call simulated `stop_all()`;
-- `press_key`, `move_mouse`, `click` are not called by FSM.
-
-Strategy updates use `set_strategy`; they do not recreate/reset the FSM.
-
-### Idle behavior
-
-Exactly:
-
-```text
-CAMERA_WANDER
-SUDDEN_PAUSE
-INVENTORY_CHECK
-SOCIAL_EMOTE
-ANGLED_MOVEMENT
-```
-
-These are symbolic intents only.
-
-Overall eligible-tick trigger probability:
-
-```text
-0.08
-```
-
-Curiosity changes selection weights, not trigger probability.
-
-Allowed symbolic emotes:
-
-```text
-wave
-laugh
-```
-
-No slash commands, physical input, camera geometry, or path coordinates.
-
-### Path
-
-Pure synthetic 2D geometry.
-
-- `num_points` = total returned points;
-- minimum `3`;
-- endpoints exact;
-- start != end;
-- injectable RNG;
-- smooth single-arc perpendicular offset;
-- minimum curve amplitude `20px`;
-- maximum `80px`;
-- relative sample `10–20%` baseline length;
-- canonical acceptance: std dev from direct line > `5px`;
-- no Controller/FSM/timing coupling.
-
----
-
-## 12. Watchdog Invariants
-
-Watchdog is an independent supervisor, not an executor.
-
-Architecture:
-
-```text
-main process → IPC messages → Watchdog process
-Watchdog → shutdown Event → main process
-```
-
-Health states:
-
-```text
-HEALTHY
-DEGRADED
-CRITICAL
-```
-
-Frozen baseline thresholds unless the current approved code/config has an explicitly documented equivalent:
-
-```text
-startup grace                  30s
-heartbeat degraded             >=10s
-heartbeat critical             >=30s
-progress degraded              >=30s
-recovery window                60s
-recovery degraded count        >=3
-recovery critical count        >=5
-continuous recovery critical   >=20s
-death-loop window              600 simulation seconds
-death-loop degraded count      >=3
-death-loop critical count      >=5
-graceful shutdown timeout      10s
-poll interval                  0.5s
-```
-
-Critical rules:
-
-- Watchdog does not reimplement FSM's 5-second stuck logic.
-- Count entries into `STUCK_RECOVERY`, not repeated heartbeats while already there.
-- DEGRADED does not automatically request shutdown.
-- CRITICAL latches shutdown request.
-- preserve logs;
-- no F10/global hotkey listener in Watchdog core;
-- no Controller calls from Watchdog.
-
----
-
-## 13. Execution Modes
-
-Two modes exist. Default is MOCK_MODE.
-
-### MOCK_MODE (default)
-- Perception: MockPerception produces synthetic GameState.
-- Actuation: SimulationController records symbolic intents only.
+- Perception: `MockPerception` produces synthetic `GameState`.
+- Actuation: `SimulationController` records symbolic intents only.
 - `dry_run=False` MUST be rejected.
 - No OS input, no screen capture, no network to game server.
-- Runs in CI.
+- Runs in CI. All tests run in this mode by default.
 
-### LAB_MODE (opt-in)
-- Activated only by setting `LAB_MODE=1` AND a valid
-  `LAB_SERVER_ALLOWLIST` entry AND a passing network isolation check.
-- Perception: RealPerception (capture -> vision -> GameState).
-- Actuation: RealActuator (symbolic intent -> synthetic input).
-- Reflex layer runs at 10-20 Hz. LLM does NOT participate in reflex.
-- Kill switch armed on startup. Session log path is immutable.
+### 3.2 LAB_MODE (opt-in)
+
+Activated only when ALL of the following hold:
+
+- `LAB_MODE=1`
+- A valid `LAB_SERVER_ALLOWLIST` entry exists in config.
+- Network isolation check passes (see `SAFETY.md`).
+- SafetyLayer is armed.
+- A `Session` has been opened with append-only logging.
+
+In LAB_MODE:
+- Perception: still `MockPerception` (per current roadmap).
+- Actuation: `RealActuator` (real OS input).
+- Reflex layer runs at 10-20 Hz.
+- Watchdog runs in behavioral mode.
+- Kill switch armed on startup.
+- Session logs immutable.
 - MUST NOT run in CI. MUST NOT run unattended.
 
-## Layering Rules (both modes)
+---
 
-- `GameState` schema is the single contract between perception and the
-  rest of the pipeline. Producers may differ; consumers MUST NOT.
-- Fast reflex and slow planning MUST be separate loops.
-  - Fast loop: reflex layer, 10-20 Hz, no LLM, deterministic given
-    state + timing seed.
-  - Slow loop: strategist, seconds-scale, LLM-backed, may be
-    nondeterministic across runs.
-- World Model (map, entities, routes) is separate from Internal
-  Dynamics (drives, oscillators, chaos). They MUST NOT share tables.
+## 4. Layering Rules (both modes)
 
-## Forbidden (unchanged, now also enforced in LAB_MODE)
+### 4.1 GameState Contract
 
-- pynput/pyautogui outside `RealActuator`.
-- Cloud LLM calls. Local Ollama only.
-- Global `np.random.seed`. Use per-component generators.
-- Truncating or deleting logs on error.
-- Reading or writing game process memory.
-- Modifying the game binary.
-- Any connection to a server outside `LAB_SERVER_ALLOWLIST`.
+`GameState` is the single contract between perception and the rest of
+the pipeline. Producers may differ (`MockPerception` vs future
+`RealPerception`); consumers MUST NOT branch on producer identity.
+
+**Any task that changes the `GameState` schema MUST be halted and
+reviewed.** Schema changes ripple through every downstream layer and
+invalidate existing reports.
+
+### 4.2 Fast vs Slow Loops
+
+The system has two decision loops that MUST remain separate:
+
+- **Fast loop (Reflex):** 10-20 Hz, no LLM, deterministic given
+  `(state, tick_index, per-component_seed)`. Handles safety, abort,
+  stuck detection, focus loss, interrupt windows.
+- **Slow loop (Strategist):** seconds-scale, LLM-backed, may be
+  nondeterministic across runs. Handles goal selection and high-level
+  planning.
+
+The Combat Engine runs on the fast loop. The FSM runs on the slow loop
+but consumes fast-loop control signals.
+
+**No layer other than the Strategist may call the LLM.** This is
+enforced by static import checks in tests.
+
+### 4.3 Memory Separation
+
+Two distinct stores exist and MUST NOT share tables:
+
+- **Internal Dynamics:** drives, oscillators, chaos, agent internal
+  state. Owned by `internal_dynamics`.
+- **World Model:** map nodes, edges, entities, routes, combat history.
+  Owned by `world`. All tables prefixed `wm_`.
+
+Cross-writes are forbidden. Cross-reads go through explicit APIs.
+
+### 4.4 Safety Layer is Always Alive
+
+`SafetyLayer` is instantiated in Phase 0 and MUST be active in every
+mode. No task may bypass it. The following calls are mandatory:
+
+- `safety.check_allowlist(addr)` before any outbound game connection.
+- `safety.check_isolation()` at LAB_MODE startup.
+- `safety.is_aborted()` at the top of every actuation.
+- `safety.abort(reason)` on any critical failure.
 
 ---
 
-## 14. Task 7.1 Pipeline Invariants
+## 5. Task Workflow
 
-Expected logical loops:
+### 5.1 Source of Tasks
 
-```text
-perception
-dynamics
-strategist
-executor
-watchdog heartbeat
-watchdog shutdown bridge
-```
+Tasks are defined exclusively in `LAB_PHASE_ROADMAP.md`. Do not invent
+tasks. Do not merge tasks. Do not reorder tasks without updating the
+roadmap first.
 
-Queue policy:
+Each task has:
+- Identifier (e.g., `T0.1`)
+- Dependencies
+- Deliverables (files)
+- Contract (interfaces, behavior)
+- Acceptance criteria (testable)
+- Out-of-scope items
 
-- ordered `GameState`/executor domain flow uses backpressure;
-- strategist snapshot uses latest-value semantics;
-- Strategy delivery may use latest-value semantics;
-- avoid unbounded queues.
+### 5.2 PR Rules
 
-Progress token:
+Every PR MUST:
 
-```text
-one successfully completed Dynamics step
-= +1
-```
+- Address exactly one task from the roadmap.
+- Reference the task id in the PR title (e.g., `T0.1: Config System`).
+- Include all deliverables listed in the task.
+- Pass all acceptance criteria, with tests demonstrating each.
+- Run tests in MOCK_MODE.
+- Not touch files outside the task's declared scope. If a shared file
+  needs a change, that change belongs to a separate task.
+- Include a short PR description mapping changes to acceptance items.
 
-Strategist refresh reasons:
+PRs that expand scope, combine tasks, or skip acceptance tests MUST be
+rejected.
 
-```text
-no Strategy
-OR expired Strategy
-OR MetaState trigger
-```
+### 5.3 Prompt Template for Coding Agents
 
-Failed refresh cooldown:
+When handing a task to an automated agent (Jules or equivalent), use the
+template in Appendix B of `LAB_PHASE_ROADMAP.md`. Do not paraphrase the
+task; copy the deliverables, contract, acceptance, and out-of-scope
+sections verbatim.
 
-```text
-10 simulation seconds
-```
+### 5.4 When to Stop and Ask
 
-Initial Strategy failure is not replaced with a fabricated Strategy.
+An agent MUST stop and request review if any of the following occur:
 
-FSM is constructed lazily after first valid Strategy and reused thereafter.
+- The task requires changing `GameState` schema.
+- The task requires touching `SafetyLayer`, `Session`, or `Config` in
+  ways not declared in the task.
+- The task requires network access, OS input, or filesystem access
+  outside the designated modules.
+- A dependency task is incomplete or failing.
+- A test cannot be written in MOCK_MODE.
+- The task's acceptance criteria cannot be met without violating
+  `LAB_CONSTRAINTS.md`.
 
-Task 7.1 local runtime acceptance is **not** established by static/unit checks.
-
----
-
-## 15. Task 7.2 Scenario Report Invariants
-
-Report schema version:
-
-```text
-1
-```
-
-High-level shape:
-
-```text
-run
-summary
-strategist
-fsm
-meta_state
-timing
-watchdog
-```
-
-Required for Task 8.1:
-
-```text
-meta_state.dimensions
-meta_state.samples[].simulation_timestamp
-meta_state.samples[].vector
-```
-
-Required for Task 8.2:
-
-```text
-timing.unit
-timing.samples_ms
-```
-
-Enhanced timing metadata should preserve `samples_ms` and add per-sample parameters rather than breaking the schema.
-
-JSON must be strict (`NaN`/`Infinity` forbidden).
-
-Instrumentation is passive and must not affect runtime decisions.
+Stopping is always preferable to silently diverging.
 
 ---
 
-## 16. Task 8.1 Scientific Contract
+## 6. Coding Standards
 
-- consume structured report, not logs;
-- each drive analyzed independently;
-- validate timestamps and dimensions;
-- handle irregular sampling by deterministic uniform resampling;
-- FFT diagnostics;
-- Welch PSD;
-- log-log slope fit;
-- exclude DC/non-positive/non-finite PSD;
-- target slope range `[-1.5, -0.5]`;
-- result outside target is not a software exception;
-- do not retune fit range or Dynamics after seeing the result.
-
----
-
-## 17. Task 8.2 Scientific Contract
-
-Primary exact model test:
-
-```text
-conditional clipped-lognormal
-→ randomized PIT
-→ KS against Uniform(0,1)
-```
-
-Fixed PIT seed:
-
-```text
-8202
-```
-
-Roadmap targets:
-
-```text
-KS p-value > 0.05
-CV > 0.3
-```
-
-CV:
-
-```text
-sample_std(ddof=1) / sample_mean
-```
-
-Clipped samples remain included.
-
-Legacy reports without per-sample model parameters may receive descriptive analysis but must not claim exact conditional-model acceptance.
-
----
-
-## 18. Task 8.3 Soak Contract
-
-Harness only; actual 24-hour execution is local.
-
-Expected:
-
-- configurable scenario/duration/sample interval/seed/output;
-- default 24h duration may be 86400s;
-- operational clock is monotonic;
-- sample CPU, RSS memory, log size, progress, watchdog state where available;
-- no auto-restart after crash;
-- partial/checkpoint evidence preserved;
-- strict JSON;
-- objective crash criterion;
-- no arbitrary memory-leak threshold.
-
-Memory stability status remains:
-
-```text
-manual_review_required
-```
-
-until an explicit validated threshold is approved.
-
----
-
-## 19. Phase 7–8 Validation Policy
-
-For Tasks 7.1–8.3:
-
-- an isolated coding agent may complete implementation with static/offline tests;
-- local runtime/scientific gates are deferred;
-- task status should say `LOCAL VALIDATION PENDING` where appropriate;
-- reviewer must not misclassify this as missing implementation;
-- reviewer must not claim final acceptance without the evidence described in `LOCAL_VALIDATION_ROADMAP.md`.
-
----
-
-## 20. Task 9.1
-
-```text
-PENDING
-```
-
-Do not implement until the external perception dependency is delivered and explicitly unblocked.
-
----
-
-## 21. Coding Quality
+### 6.1 Language and Tooling
 
 - Python 3.12+
-- strict typing
-- Ruff clean
-- async cancellation preserved
-- no broad `except Exception: continue`
-- explicit lifecycle for long-lived resources
-- no hidden blocking I/O inside event loop
-- no secrets in logs
-- no unrelated refactors
-- task-scoped commits
-- generated reports/logs/databases not committed
+- `asyncio` for concurrency
+- `aiosqlite` for DB access
+- `pytest` + `pytest-asyncio` for tests
+- `mypy` strict for types
+- `Ruff` for lint and format
+- `uv` for package management
+
+### 6.2 Determinism
+
+- Per-component RNG only. Each component receives its own
+  `numpy.random.Generator` seeded from config.
+- **Global `np.random.seed` is forbidden.** Any task that introduces it
+  MUST be rejected.
+- Deterministic components (FSM, Reflex, Watchdog, Navigation) MUST
+  produce identical outputs given identical inputs and seeds.
+
+### 6.3 LLM Usage
+
+- Local Ollama only. No cloud fallback, ever.
+- Default model: Qwen 2.5 7B (configurable).
+- Only `strategist` may call the LLM.
+- All prompts and responses are logged with a stable prompt hash.
+
+### 6.4 Logging
+
+- Structured, append-only, JSON lines.
+- No log truncation or deletion on error. Ever.
+- Every session writes `session.json`, `events.jsonl`, and (on crash)
+  `crash.json`.
+- Every event has `ts`, `event`, `payload`.
+
+### 6.5 Config
+
+- All config keys live in `config/lab.example.toml` with a comment.
+- Missing or unknown keys raise `ConfigError` at load time.
+- Any task that adds a config key MUST update the example file.
 
 ---
 
-## 22. Definition of Done
+## 7. Forbidden Actions (any mode)
 
-### Tasks 0–6
+The following are forbidden and MUST cause a task to be rejected:
 
-A task normally requires:
-
-- implementation;
-- task-relevant executable evidence;
-- regression safety;
-- lint/type checks;
-- no invariant regression.
-
-### Tasks 7.1–8.3
-
-A task can reach:
-
-```text
-IMPLEMENTED — LOCAL VALIDATION PENDING
-```
-
-when:
-
-- implementation is complete;
-- static/offline tests are credible;
-- local-only checklist is documented.
-
-Final acceptance requires `LOCAL_VALIDATION_ROADMAP.md`.
+- Reading or writing game process memory.
+- Injecting DLLs, hooking syscalls, or patching the game binary.
+- Connecting to any server outside `LAB_SERVER_ALLOWLIST`.
+- Including any Blizzard-owned domain or IP in the allowlist.
+- Calling a cloud LLM.
+- Using global `np.random.seed`.
+- Using `pynput`, `pyautogui`, `keyboard`, or any OS input library
+  outside `src/wowbot/actuation/drivers/`.
+- Using screen capture (`mss`, `dxcam`, etc.) outside
+  `src/wowbot/perception/` (currently empty; reserved for future).
+- Truncating, rotating, or deleting logs on error.
+- Adding tests that require a live game client.
+- Adding CI steps that run in LAB_MODE.
+- Hardcoding secrets, tokens, or credentials anywhere.
 
 ---
 
-## 23. Reviewer Escalation
+## 8. Phase Discipline
 
-If a reviewer finds a mismatch:
+Phases in `LAB_PHASE_ROADMAP.md` MUST be completed in order.
 
-1. cite task ID;
-2. cite file/symbol;
-3. explain expected contract;
-4. show actual behavior;
-5. classify whether it is:
-   - implementation defect,
-   - documentation mismatch,
-   - local validation pending,
-   - scientific result outside target,
-   - external dependency pending.
+- A phase is "complete" only when all its tasks pass acceptance.
+- A new phase MUST NOT start until the previous phase's acceptance
+  criteria are met and merged.
+- Within a phase, tasks may proceed in parallel only if their declared
+  dependencies allow it.
+- Phase 0 (Foundation) is non-negotiable and MUST be fully complete
+  before any LAB_MODE actuation is written.
 
-Do not automatically "fix" scientific results by changing thresholds or models.
+---
+
+## 9. Safety Escalation
+
+If at any point during a task it becomes clear that the implementation
+would require violating `LAB_CONSTRAINTS.md`, the agent MUST:
+
+1. Stop immediately.
+2. Do not implement the violating behavior, not even behind a flag.
+3. Open an issue describing the conflict.
+4. Wait for explicit resolution before resuming.
+
+"Do not implement, even behind a flag" is literal. Flags get flipped.
+Half-measures get shipped. Stop and ask.
+
+---
+
+## 10. References Quick Index
+
+- Phase and task list: `LAB_PHASE_ROADMAP.md`
+- Hard boundaries: `LAB_CONSTRAINTS.md`
+- Layer table: `ARCHITECTURE.md` §Layers
+- Data flow: `ARCHITECTURE.md` §Data Flow
+- Safety spec: `SAFETY.md`
+- Actuation spec: `ACTUATION.md`
+- Perception spec (future): `PERCEPTION.md`
+- Legacy validation tasks: `LOCAL_VALIDATION_ROADMAP.md`
+- Project scope statement: `README.md`
+
+---
+
+## 11. Versioning
+
+This file is versioned with the repo. Changes MUST be made by explicit
+edit, not by agent inference. When a change is made, the section that
+changed MUST be listed in the commit message body.
