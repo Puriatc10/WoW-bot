@@ -274,6 +274,52 @@ class WorldModel:
             except (sqlite3.Error, aiosqlite.Error) as e:
                 raise WorldStoreError(f"Database error in add_edge: {e}") from e
 
+    async def all_nodes_and_edges(self) -> tuple[list[NodeRow], list[EdgeRow]]:
+        async with self._conn.execute(
+            """
+            SELECT id, x, y, z, kind, discovered_at, last_seen_at, meta_json
+            FROM wm_map_nodes
+            ORDER BY id ASC
+            """
+        ) as cursor:
+            node_rows = await cursor.fetchall()
+
+        nodes = [
+            NodeRow(
+                id=int(r[0]),
+                x=float(r[1]),
+                y=float(r[2]),
+                z=float(r[3]),
+                kind=str(r[4]),
+                discovered_at=str(r[5]),
+                last_seen_at=str(r[6]),
+                meta_json=str(r[7]),
+            )
+            for r in node_rows
+        ]
+
+        async with self._conn.execute(
+            """
+            SELECT from_id, to_id, cost, bidirectional, discovered_at
+            FROM wm_map_edges
+            ORDER BY from_id ASC, to_id ASC
+            """
+        ) as cursor:
+            edge_rows = await cursor.fetchall()
+
+        edges = [
+            EdgeRow(
+                from_id=int(r[0]),
+                to_id=int(r[1]),
+                cost=float(r[2]),
+                bidirectional=bool(r[3]),
+                discovered_at=str(r[4]),
+            )
+            for r in edge_rows
+        ]
+
+        return nodes, edges
+
     async def edges_from(self, node_id: int) -> list[EdgeRow]:
         async with self._conn.execute(
             """

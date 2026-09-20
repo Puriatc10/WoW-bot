@@ -228,6 +228,34 @@ async def test_add_edge_replace_updates_cost_and_timestamp(tmp_path: Path) -> No
 
 
 @pytest.mark.asyncio
+async def test_all_nodes_and_edges_empty_and_ordering(tmp_path: Path) -> None:
+    db_file = tmp_path / "wm.db"
+    async with await WorldModel.open(db_file) as store:
+        empty_nodes, empty_edges = await store.all_nodes_and_edges()
+        assert empty_nodes == []
+        assert empty_edges == []
+
+        n1 = await store.add_node(10.0, 10.0, kind="node")
+        n2 = await store.add_node(20.0, 20.0, kind="vendor")
+        n3 = await store.add_node(30.0, 30.0, kind="mob")
+
+        # Insert edges in non-sorted from_id/to_id order
+        await store.add_edge(n3, n1, cost=5.0, bidirectional=False)
+        await store.add_edge(n1, n3, cost=2.0, bidirectional=False)
+        await store.add_edge(n1, n2, cost=1.0, bidirectional=False)
+
+        nodes, edges = await store.all_nodes_and_edges()
+
+        assert len(nodes) == 3
+        assert [n.id for n in nodes] == [n1, n2, n3]
+
+        assert len(edges) == 3
+        edge_pairs = [(e.from_id, e.to_id) for e in edges]
+        assert edge_pairs == [(n1, n2), (n1, n3), (n3, n1)]
+        assert edge_pairs == sorted(edge_pairs)
+
+
+@pytest.mark.asyncio
 async def test_edges_from_sorted_by_to_id_asc(tmp_path: Path) -> None:
     db_file = tmp_path / "wm.db"
     async with await WorldModel.open(db_file) as store:
