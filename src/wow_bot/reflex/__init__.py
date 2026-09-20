@@ -22,6 +22,12 @@ from wow_bot.reflex.signals import (
     SignalError,
     SignalSource,
 )
+from wow_bot.reflex.sources import (
+    FocusSignalSource,
+    KillSwitchSignalSource,
+    SafetySignalSource,
+    SessionTimeoutSignalSource,
+)
 
 __all__ = [
     "CallbackSink",
@@ -29,6 +35,8 @@ __all__ = [
     "ControlKind",
     "ControlSignal",
     "ControlSink",
+    "FocusSignalSource",
+    "KillSwitchSignalSource",
     "ListSignalSource",
     "NullClock",
     "NullControlSink",
@@ -36,6 +44,8 @@ __all__ = [
     "RealClock",
     "ReflexError",
     "ReflexLoop",
+    "SafetySignalSource",
+    "SessionTimeoutSignalSource",
     "Signal",
     "SignalError",
     "SignalSource",
