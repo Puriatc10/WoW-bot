@@ -64,7 +64,7 @@ actuation, no reflex. Everything that follows depends on this.
 **Depends on:** none
 **Deliverables:**
 - `config/lab.example.toml`
-- `src/wowbot/config.py`
+- `src/wow_bot/config.py`
 - `tests/test_config.py`
 
 **Contract:**
@@ -88,7 +88,7 @@ actuation, no reflex. Everything that follows depends on this.
 
 **Depends on:** T0.1
 **Deliverables:**
-- `src/wowbot/session.py`
+- `src/wow_bot/session.py`
 - `tests/test_session.py`
 
 **Contract:**
@@ -115,7 +115,7 @@ actuation, no reflex. Everything that follows depends on this.
 
 **Depends on:** T0.1, T0.2
 **Deliverables:**
-- `src/wowbot/safety.py`
+- `src/wow_bot/safety.py`
 - `tests/test_safety.py`
 
 **Contract:**
@@ -143,7 +143,7 @@ actuation, no reflex. Everything that follows depends on this.
 
 **Depends on:** T0.3
 **Deliverables:**
-- `src/wowbot/kill_switch.py`
+- `src/wow_bot/kill_switch.py`
 - `tests/test_kill_switch.py`
 
 **Contract:**
@@ -165,7 +165,7 @@ actuation, no reflex. Everything that follows depends on this.
 
 **Depends on:** T0.2
 **Deliverables:**
-- `src/wowbot/logging_setup.py`
+- `src/wow_bot/logging_setup.py`
 - `tests/test_logging_setup.py`
 
 **Contract:**
@@ -186,7 +186,7 @@ actuation, no reflex. Everything that follows depends on this.
 
 **Depends on:** T0.1, T0.3, T0.5
 **Deliverables:**
-- `src/wowbot/mode.py`
+- `src/wow_bot/mode.py`
 - `tests/test_mode.py`
 
 **Contract:**
@@ -225,10 +225,10 @@ actuation, no reflex. Everything that follows depends on this.
 
 **Depends on:** Phase 0
 **Deliverables:**
-- `src/wowbot/actuation/driver.py`
-- `src/wowbot/actuation/drivers/null.py`
-- `src/wowbot/actuation/drivers/pynput_backend.py`
-- `src/wowbot/actuation/drivers/interception_backend.py`
+- `src/wow_bot/actuation/driver.py`
+- `src/wow_bot/actuation/drivers/null.py`
+- `src/wow_bot/actuation/drivers/pynput_backend.py`
+- `src/wow_bot/actuation/drivers/interception_backend.py`
 - `tests/test_driver.py`
 
 **Contract:**
@@ -249,7 +249,7 @@ actuation, no reflex. Everything that follows depends on this.
 
 **Depends on:** T1.1
 **Deliverables:**
-- `src/wowbot/actuation/focus.py`
+- `src/wow_bot/actuation/focus.py`
 - `tests/test_focus.py`
 
 **Contract:**
@@ -270,7 +270,7 @@ actuation, no reflex. Everything that follows depends on this.
 
 **Depends on:** T1.1, T1.2
 **Deliverables:**
-- `src/wowbot/actuation/mapper.py`
+- `src/wow_bot/actuation/mapper.py`
 - `tests/test_mapper.py`
 
 **Contract:**
@@ -291,7 +291,7 @@ actuation, no reflex. Everything that follows depends on this.
 
 **Depends on:** T1.3
 **Deliverables:**
-- `src/wowbot/actuation/actuator.py`
+- `src/wow_bot/actuation/actuator.py`
 - `tests/test_actuator.py`
 
 **Contract:**
@@ -349,7 +349,7 @@ independent of LLM and FSM.
 
 **Depends on:** Phase 0, T1.4
 **Deliverables:**
-- `src/wowbot/reflex/loop.py`
+- `src/wow_bot/reflex/loop.py`
 - `tests/test_reflex_loop.py`
 
 **Contract:**
@@ -369,7 +369,7 @@ independent of LLM and FSM.
 
 **Depends on:** T2.1
 **Deliverables:**
-- `src/wowbot/reflex/signals.py`
+- `src/wow_bot/reflex/signals.py`
 - `tests/test_signals.py`
 
 **Contract:**
@@ -388,7 +388,7 @@ independent of LLM and FSM.
 
 **Depends on:** T2.1, T2.2
 **Deliverables:**
-- `src/wowbot/reflex/controls.py`
+- `src/wow_bot/reflex/controls.py`
 - `tests/test_controls.py`
 
 **Contract:**
@@ -408,7 +408,7 @@ independent of LLM and FSM.
 
 **Depends on:** T2.2
 **Deliverables:**
-- `src/wowbot/reflex/stuck.py`
+- `src/wow_bot/reflex/stuck.py`
 - `tests/test_stuck.py`
 
 **Contract:**
@@ -440,7 +440,7 @@ Reflex, World Model hooks, and ActionResult feedback.
 
 **Depends on:** Phase 2
 **Deliverables:**
-- `src/wowbot/executor/states.py`
+- `src/wow_bot/executor/states.py`
 - `tests/test_states.py`
 
 **Contract:**
@@ -459,7 +459,7 @@ Reflex, World Model hooks, and ActionResult feedback.
 
 **Depends on:** T3.1, T1.4
 **Deliverables:**
-- `src/wowbot/executor/feedback.py`
+- `src/wow_bot/executor/feedback.py`
 - `tests/test_feedback.py`
 
 **Contract:**
@@ -478,7 +478,7 @@ Reflex, World Model hooks, and ActionResult feedback.
 
 **Depends on:** T3.1, T3.2
 **Deliverables:**
-- `src/wowbot/executor/fsm_v2.py`
+- `src/wow_bot/executor/fsm_v2.py`
 - `tests/test_fsm_v2.py`
 
 **Contract:**
@@ -498,7 +498,7 @@ Reflex, World Model hooks, and ActionResult feedback.
 
 **Depends on:** T3.3
 **Deliverables:**
-- `src/wowbot/executor/recovery.py`
+- `src/wow_bot/executor/recovery.py`
 - `tests/test_recovery.py`
 
 **Contract:**
@@ -517,7 +517,7 @@ Reflex, World Model hooks, and ActionResult feedback.
 
 **Depends on:** T3.3, T2.3
 **Deliverables:**
-- `src/wowbot/executor/reflex_bridge.py`
+- `src/wow_bot/executor/reflex_bridge.py`
 - `tests/test_reflex_bridge.py`
 
 **Contract:**
@@ -549,7 +549,7 @@ Reflex, World Model hooks, and ActionResult feedback.
 **Depends on:** Phase 3
 **Deliverables:**
 - `migrations/world_model/001_init.sql`
-- `src/wowbot/world/schema.py`
+- `src/wow_bot/world/schema.py`
 - `tests/test_world_schema.py`
 
 **Contract:**
@@ -570,7 +570,7 @@ Reflex, World Model hooks, and ActionResult feedback.
 
 **Depends on:** T4.1
 **Deliverables:**
-- `src/wowbot/world/store.py`
+- `src/wow_bot/world/store.py`
 - `tests/test_world_store.py`
 
 **Contract:**
@@ -590,7 +590,7 @@ Reflex, World Model hooks, and ActionResult feedback.
 
 **Depends on:** T4.2
 **Deliverables:**
-- `src/wowbot/world/sync.py`
+- `src/wow_bot/world/sync.py`
 - `tests/test_world_sync.py`
 
 **Contract:**
@@ -609,7 +609,7 @@ Reflex, World Model hooks, and ActionResult feedback.
 
 **Depends on:** T4.2
 **Deliverables:**
-- `src/wowbot/world/summary.py`
+- `src/wow_bot/world/summary.py`
 - `tests/test_world_summary.py`
 
 **Contract:**
@@ -627,7 +627,7 @@ Reflex, World Model hooks, and ActionResult feedback.
 
 **Depends on:** T4.2
 **Deliverables:**
-- `src/wowbot/world/loader.py`
+- `src/wow_bot/world/loader.py`
 - `tests/test_world_loader.py`
 
 **Contract:**
@@ -657,7 +657,7 @@ recovery.
 
 **Depends on:** T4.2
 **Deliverables:**
-- `src/wowbot/nav/graph.py`
+- `src/wow_bot/nav/graph.py`
 - `tests/test_nav_graph.py`
 
 **Contract:**
@@ -676,7 +676,7 @@ recovery.
 
 **Depends on:** T5.1
 **Deliverables:**
-- `src/wowbot/nav/astar.py`
+- `src/wow_bot/nav/astar.py`
 - `tests/test_astar.py`
 
 **Contract:**
@@ -695,7 +695,7 @@ recovery.
 
 **Depends on:** T5.2, T1.4
 **Deliverables:**
-- `src/wowbot/nav/navigator.py`
+- `src/wow_bot/nav/navigator.py`
 - `tests/test_navigator.py`
 
 **Contract:**
@@ -715,7 +715,7 @@ recovery.
 
 **Depends on:** T5.3
 **Deliverables:**
-- `src/wowbot/nav/replan.py`
+- `src/wow_bot/nav/replan.py`
 - `tests/test_replan.py`
 
 **Contract:**
@@ -734,7 +734,7 @@ recovery.
 
 **Depends on:** T5.3
 **Deliverables:**
-- `src/wowbot/nav/telemetry.py`
+- `src/wow_bot/nav/telemetry.py`
 - `tests/test_nav_telemetry.py`
 
 **Contract:**
@@ -765,7 +765,7 @@ recovery.
 
 **Depends on:** Phase 5
 **Deliverables:**
-- `src/wowbot/combat/rotation.py`
+- `src/wow_bot/combat/rotation.py`
 - `tests/test_rotation.py`
 
 **Contract:**
@@ -785,7 +785,7 @@ recovery.
 
 **Depends on:** T6.1
 **Deliverables:**
-- `src/wowbot/combat/targeting.py`
+- `src/wow_bot/combat/targeting.py`
 - `tests/test_targeting.py`
 
 **Contract:**
@@ -804,7 +804,7 @@ recovery.
 
 **Depends on:** T6.1, T6.2, T3.3
 **Deliverables:**
-- `src/wowbot/combat/loop.py`
+- `src/wow_bot/combat/loop.py`
 - `tests/test_combat_loop.py`
 
 **Contract:**
@@ -824,7 +824,7 @@ recovery.
 
 **Depends on:** T6.3
 **Deliverables:**
-- `src/wowbot/combat/reactive.py`
+- `src/wow_bot/combat/reactive.py`
 - `tests/test_combat_reactive.py`
 
 **Contract:**
@@ -844,7 +844,7 @@ recovery.
 
 **Depends on:** T6.3, T5.3
 **Deliverables:**
-- `src/wowbot/combat/flee.py`
+- `src/wow_bot/combat/flee.py`
 - `tests/test_flee.py`
 
 **Contract:**
@@ -877,7 +877,7 @@ recovery.
 
 **Depends on:** T1.4
 **Deliverables:**
-- `src/wowbot/humanize/intervals.py`
+- `src/wow_bot/humanize/intervals.py`
 - `tests/test_humanize_intervals.py`
 
 **Contract:**
@@ -896,7 +896,7 @@ recovery.
 
 **Depends on:** T1.4
 **Deliverables:**
-- `src/wowbot/humanize/cursor.py`
+- `src/wow_bot/humanize/cursor.py`
 - `tests/test_humanize_cursor.py`
 
 **Contract:**
@@ -915,7 +915,7 @@ recovery.
 
 **Depends on:** T7.1
 **Deliverables:**
-- `src/wowbot/humanize/imperfections.py`
+- `src/wow_bot/humanize/imperfections.py`
 - `tests/test_humanize_imperfections.py`
 
 **Contract:**
@@ -934,7 +934,7 @@ recovery.
 
 **Depends on:** T7.1, T7.2, T7.3, T1.4
 **Deliverables:**
-- `src/wowbot/actuation/humanized.py`
+- `src/wow_bot/actuation/humanized.py`
 - `tests/test_humanized_actuator.py`
 
 **Contract:**
@@ -965,7 +965,7 @@ recovery.
 
 **Depends on:** Phase 4, Phase 5
 **Deliverables:**
-- `src/wowbot/watchdog/metrics.py`
+- `src/wow_bot/watchdog/metrics.py`
 - `tests/test_wd_metrics.py`
 
 **Contract:**
@@ -983,7 +983,7 @@ recovery.
 
 **Depends on:** T8.1
 **Deliverables:**
-- `src/wowbot/watchdog/health.py`
+- `src/wow_bot/watchdog/health.py`
 - `tests/test_wd_health.py`
 
 **Contract:**
@@ -1001,7 +1001,7 @@ recovery.
 
 **Depends on:** T8.2
 **Deliverables:**
-- `src/wowbot/watchdog/loops.py`
+- `src/wow_bot/watchdog/loops.py`
 - `tests/test_wd_loops.py`
 
 **Contract:**
@@ -1019,7 +1019,7 @@ recovery.
 
 **Depends on:** T8.2, T0.3
 **Deliverables:**
-- `src/wowbot/watchdog/shutdown.py`
+- `src/wow_bot/watchdog/shutdown.py`
 - `tests/test_wd_shutdown.py`
 
 **Contract:**
@@ -1050,7 +1050,7 @@ recovery.
 
 **Depends on:** Phase 4
 **Deliverables:**
-- `src/wowbot/strategist/prompts_v2.py`
+- `src/wow_bot/strategist/prompts_v2.py`
 - `tests/test_prompts_v2.py`
 
 **Contract:**
@@ -1069,7 +1069,7 @@ recovery.
 
 **Depends on:** Phase 6
 **Deliverables:**
-- `src/wowbot/strategist/cooldown.py`
+- `src/wow_bot/strategist/cooldown.py`
 - `tests/test_cooldown.py`
 
 **Contract:**
@@ -1088,7 +1088,7 @@ recovery.
 
 **Depends on:** T9.1
 **Deliverables:**
-- `src/wowbot/strategist/vocab.py`
+- `src/wow_bot/strategist/vocab.py`
 - `tests/test_vocab.py`
 
 **Contract:**
@@ -1107,7 +1107,7 @@ recovery.
 
 **Depends on:** T9.1, T9.2, T9.3
 **Deliverables:**
-- `src/wowbot/strategist/orchestrator_v2.py`
+- `src/wow_bot/strategist/orchestrator_v2.py`
 - `tests/test_orchestrator_v2.py`
 
 **Contract:**
@@ -1140,7 +1140,7 @@ recovery.
 **Depends on:** Phases 6-9
 **Deliverables:**
 - `schemas/report_v2.json`
-- `src/wowbot/reporting/schema_v2.py`
+- `src/wow_bot/reporting/schema_v2.py`
 - `tests/test_report_schema_v2.py`
 
 **Contract:**
@@ -1159,7 +1159,7 @@ recovery.
 
 **Depends on:** T10.1
 **Deliverables:**
-- `src/wowbot/reporting/lab_pipeline.py`
+- `src/wow_bot/reporting/lab_pipeline.py`
 - `tests/test_lab_pipeline.py`
 
 **Contract:**
@@ -1176,8 +1176,8 @@ recovery.
 
 **Depends on:** T10.2
 **Deliverables:**
-- `src/wowbot/analysis/lab_spectral.py`
-- `src/wowbot/analysis/lab_timing.py`
+- `src/wow_bot/analysis/lab_spectral.py`
+- `src/wow_bot/analysis/lab_timing.py`
 - `tests/test_lab_analysis.py`
 
 **Contract:**
@@ -1224,7 +1224,7 @@ recovery.
 **Depends on:** Phase 9
 **Deliverables:**
 - `config/farm_profiles/example.toml`
-- `src/wowbot/farm/profile.py`
+- `src/wow_bot/farm/profile.py`
 - `tests/test_farm_profile.py`
 
 **Contract:**
@@ -1241,7 +1241,7 @@ recovery.
 
 **Depends on:** Phase 6
 **Deliverables:**
-- `src/wowbot/farm/loot.py`
+- `src/wow_bot/farm/loot.py`
 - `tests/test_loot.py`
 
 **Contract:**
@@ -1258,7 +1258,7 @@ recovery.
 
 **Depends on:** Phase 5
 **Deliverables:**
-- `src/wowbot/farm/vendor.py`
+- `src/wow_bot/farm/vendor.py`
 - `tests/test_vendor.py`
 
 **Contract:**
@@ -1276,7 +1276,7 @@ recovery.
 
 **Depends on:** T11.1, T11.2, T11.3
 **Deliverables:**
-- `src/wowbot/farm/loop.py`
+- `src/wow_bot/farm/loop.py`
 - `tests/test_farm_loop.py`
 
 **Contract:**
@@ -1324,7 +1324,7 @@ recovery.
 
 **Depends on:** T12.1
 **Deliverables:**
-- `src/wowbot/analysis/aggregate.py`
+- `src/wow_bot/analysis/aggregate.py`
 - `tests/test_aggregate.py`
 
 **Contract:**

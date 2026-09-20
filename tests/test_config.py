@@ -1,4 +1,4 @@
-"""Acceptance tests for lab mode configuration loader (wowbot.config)."""
+"""Acceptance tests for lab mode configuration loader (wow_bot.config)."""
 
 from dataclasses import FrozenInstanceError
 from pathlib import Path

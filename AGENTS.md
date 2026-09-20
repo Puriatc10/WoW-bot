@@ -253,9 +253,9 @@ The following are forbidden and MUST cause a task to be rejected:
 - Calling a cloud LLM.
 - Using global `np.random.seed`.
 - Using `pynput`, `pyautogui`, `keyboard`, or any OS input library
-  outside `src/wowbot/actuation/drivers/`.
+  outside `src/wow_bot/actuation/drivers/`.
 - Using screen capture (`mss`, `dxcam`, etc.) outside
-  `src/wowbot/perception/` (currently empty; reserved for future).
+  `src/wow_bot/perception/` (currently empty; reserved for future).
 - Truncating, rotating, or deleting logs on error.
 - Adding tests that require a live game client.
 - Adding CI steps that run in LAB_MODE.
