@@ -394,6 +394,52 @@ async def test_record_combat_valid_outcome_returns_id(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_recent_combats_ordering_limit_and_empty(tmp_path: Path) -> None:
+    db_file = tmp_path / "wm.db"
+    async with await WorldModel.open(db_file) as store:
+        # Empty table
+        assert await store.recent_combats(5) == []
+        assert await store.recent_combats(0) == []
+
+        # Negative limit
+        with pytest.raises(WorldStoreError, match="limit must be >= 0"):
+            await store.recent_combats(-1)
+
+        # Insert combats
+        c1 = await store.record_combat(
+            "mob_1",
+            outcome="win",
+            started_at="2026-01-01T10:00:00Z",
+            ended_at="2026-01-01T10:01:00Z",
+        )
+        c2 = await store.record_combat(
+            "mob_2",
+            outcome="loss",
+            started_at="2026-01-01T10:05:00Z",
+            ended_at="2026-01-01T10:06:00Z",
+        )
+        # Same ended_at as c2 to test tie-breaker combat_id DESC
+        c3 = await store.record_combat(
+            "mob_3",
+            outcome="flee",
+            started_at="2026-01-01T10:05:00Z",
+            ended_at="2026-01-01T10:06:00Z",
+        )
+
+        res_all = await store.recent_combats(10)
+        assert len(res_all) == 3
+        # Ordering: ended_at DESC, combat_id DESC.
+        # c3 and c2 have ended_at 10:06:00, c3 > c2 in combat_id.
+        # c1 has ended_at 10:01:00.
+        assert [r.combat_id for r in res_all] == [c3, c2, c1]
+
+        # Respect limit
+        res_limit_2 = await store.recent_combats(2)
+        assert len(res_limit_2) == 2
+        assert [r.combat_id for r in res_limit_2] == [c3, c2]
+
+
+@pytest.mark.asyncio
 async def test_query_nearest_distance_filtering(tmp_path: Path) -> None:
     db_file = tmp_path / "wm.db"
     async with await WorldModel.open(db_file) as store:

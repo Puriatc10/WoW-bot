@@ -437,6 +437,37 @@ class WorldModel:
             except (sqlite3.Error, aiosqlite.Error) as e:
                 raise WorldStoreError(f"Database error in record_combat: {e}") from e
 
+    async def recent_combats(self, limit: int) -> list[CombatRow]:
+        """Fetch recent combat history rows ordered by ended_at DESC, then combat_id DESC.
+
+        Used by the strategist summary layer (T4.4).
+        """
+        if limit < 0:
+            raise WorldStoreError(f"limit must be >= 0, got {limit}")
+        if limit == 0:
+            return []
+
+        async with self._conn.execute(
+            """
+            SELECT combat_id, target_entity_id, outcome, started_at, ended_at
+            FROM wm_combat_history
+            ORDER BY ended_at DESC, combat_id DESC
+            LIMIT ?
+            """,
+            (limit,),
+        ) as cursor:
+            rows = await cursor.fetchall()
+            return [
+                CombatRow(
+                    combat_id=int(r[0]),
+                    target_entity_id=str(r[1]),
+                    outcome=str(r[2]),
+                    started_at=str(r[3]),
+                    ended_at=str(r[4]),
+                )
+                for r in rows
+            ]
+
     async def query_nearest(
         self,
         kind: str,
