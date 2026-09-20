@@ -1,0 +1,23 @@
+# Enable or disable lab mode execution (false for MOCK_MODE)
+lab_mode = false
+
+# Allowlist of server hostnames or host:port addresses for lab mode
+server_allowlist = ["127.0.0.1:8080"]
+
+# Sentinel host:port address used to verify network isolation
+isolation_sentinel = "1.1.1.1:80"
+
+# Physical key name assigned as the emergency kill switch
+kill_switch_key = "F12"
+
+# Directory path where lab session logs and data are stored
+session_root = "runs/lab"
+
+# Enforce simulation dry-run mode (no physical OS input)
+dry_run = true
+
+# Maximum duration in seconds for a single execution session
+max_session_seconds = 3600
+
+# Logging output level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+log_level = "INFO"
