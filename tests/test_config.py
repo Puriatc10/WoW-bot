@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from wowbot.config import Config, ConfigError, load_config
+from wow_bot.config import Config, ConfigError, load_config
 
 VALID_TOML_CONTENT = """
 # Valid example configuration
