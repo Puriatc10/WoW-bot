@@ -530,3 +530,40 @@ class WorldModel:
             ) as cursor:
                 row = await cursor.fetchone()
                 return int(row[0]) if row else 0
+
+    async def check_isolation(self) -> None:
+        """Verify schema isolation for the underlying database connection.
+
+        Raises WorldStoreError if any non-wm_ table exists.
+        """
+        try:
+            await _run_sync(self._conn, assert_isolated, self._conn._connection)
+        except SchemaError as err:
+            raise WorldStoreError(f"Database schema isolation error: {err}") from err
+        except Exception as err:
+            raise WorldStoreError(f"Failed to check database isolation: {err}") from err
+
+    async def statistics(self) -> dict[str, int]:
+        """Gather database statistics for nodes, edges, and entities.
+
+        Returns {"node_count": N, "edge_count": E, "entity_count": X}.
+        """
+        try:
+            async with self._conn.execute(
+                """
+                SELECT
+                    (SELECT COUNT(*) FROM wm_map_nodes) AS node_count,
+                    (SELECT COUNT(*) FROM wm_map_edges) AS edge_count,
+                    (SELECT COUNT(*) FROM wm_entities_seen) AS entity_count
+                """
+            ) as cursor:
+                row = await cursor.fetchone()
+                if row is None:
+                    return {"node_count": 0, "edge_count": 0, "entity_count": 0}
+                return {
+                    "node_count": int(row[0]),
+                    "edge_count": int(row[1]),
+                    "entity_count": int(row[2]),
+                }
+        except (sqlite3.Error, aiosqlite.Error) as err:
+            raise WorldStoreError(f"Failed to fetch statistics: {err}") from err

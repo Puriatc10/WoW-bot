@@ -639,3 +639,44 @@ def test_store_module_static_ast_checks() -> None:
             assert (
                 sub not in mod.lower()
             ), f"Forbidden LLM import in store.py: {mod}"
+
+
+@pytest.mark.asyncio
+async def test_check_isolation_passes_on_fresh_db(tmp_path: Path) -> None:
+    db_file = tmp_path / "wm.db"
+    async with await WorldModel.open(db_file) as store:
+        await store.check_isolation()  # Should not raise
+
+
+@pytest.mark.asyncio
+async def test_check_isolation_raises_on_non_wm_table(tmp_path: Path) -> None:
+    db_file = tmp_path / "wm.db"
+    async with await WorldModel.open(db_file) as store:
+        # Create non-wm_ table manually
+        await store._conn.execute("CREATE TABLE non_wm_test (id INT PRIMARY KEY);")
+        await store._conn.commit()
+
+        with pytest.raises(WorldStoreError, match="isolation"):
+            await store.check_isolation()
+
+
+@pytest.mark.asyncio
+async def test_statistics_empty_db(tmp_path: Path) -> None:
+    db_file = tmp_path / "wm.db"
+    async with await WorldModel.open(db_file) as store:
+        stats = await store.statistics()
+        assert stats == {"node_count": 0, "edge_count": 0, "entity_count": 0}
+
+
+@pytest.mark.asyncio
+async def test_statistics_with_counts(tmp_path: Path) -> None:
+    db_file = tmp_path / "wm.db"
+    async with await WorldModel.open(db_file) as store:
+        n1 = await store.add_node(1.0, 1.0, kind="node")
+        n2 = await store.add_node(2.0, 2.0, kind="node")
+        await store.add_edge(n1, n2, cost=1.0, bidirectional=True)
+        await store.mark_seen("ent1", kind="mob", x=0.0, y=0.0)
+        await store.mark_seen("ent2", kind="vendor", x=1.0, y=1.0)
+
+        stats = await store.statistics()
+        assert stats == {"node_count": 2, "edge_count": 2, "entity_count": 2}
