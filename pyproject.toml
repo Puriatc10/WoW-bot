@@ -13,6 +13,7 @@ dependencies = [
     "scipy>=1.14.0",
     "matplotlib>=3.9.0",
     "psutil>=6.0.0",
+    "tzdata>=2024.1; sys_platform == 'win32'",
 ]
 
 [project.optional-dependencies]
@@ -27,7 +28,7 @@ dev = [
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
-pythonpath = ["src"]
+pythonpath = ["src", "."]
 
 [tool.ruff]
 line-length = 100

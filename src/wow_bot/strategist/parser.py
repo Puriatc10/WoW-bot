@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import json
 import math
-from typing import Final, NoReturn
+from typing import Any, Final, NoReturn
 
 from wow_bot.shared.interfaces import STRATEGY_GOALS, Strategy
 
@@ -40,6 +40,15 @@ def _reject_non_finite_constant(val: str) -> NoReturn:
     raise ValueError(f"Non-standard JSON numeric constant rejected: {val}")
 
 
+def _unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("Duplicate JSON field")
+        result[key] = value
+    return result
+
+
 def _unwrap_optional_code_fence(text: str) -> str:
     """Unwrap a single full-string Markdown code fence if present.
 
@@ -54,6 +63,8 @@ def _unwrap_optional_code_fence(text: str) -> str:
     lines = text.splitlines()
     if len(lines) < 2:
         raise StrategyParseError("Malformed code fence in strategy response")
+    if lines[-1].strip() != "```":
+        raise StrategyParseError("Malformed closing code fence")
 
     first_line = lines[0].rstrip()
     if first_line not in ("```", "```json", "```JSON"):
@@ -98,7 +109,11 @@ def parse_strategy_response(raw: str, valid_until: float) -> Strategy:
     cleaned_text = _unwrap_optional_code_fence(trimmed)
 
     try:
-        payload = json.loads(cleaned_text, parse_constant=_reject_non_finite_constant)
+        payload = json.loads(
+            cleaned_text,
+            parse_constant=_reject_non_finite_constant,
+            object_pairs_hook=_unique_object,
+        )
     except json.JSONDecodeError as exc:
         raise StrategyParseError("LLM strategy response is not valid JSON") from exc
     except ValueError as exc:

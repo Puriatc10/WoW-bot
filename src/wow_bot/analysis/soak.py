@@ -75,6 +75,7 @@ class ProcessResourceSampler:
     """Cross-platform resource sampler measuring main process + child process tree using psutil."""
 
     def __init__(self, pid: int | None = None) -> None:
+        self._children: dict[int, Any] = {}
         target_pid = pid if pid is not None else os.getpid()
         try:
             self._proc = psutil.Process(target_pid)
@@ -83,6 +84,7 @@ class ProcessResourceSampler:
             for child in self._proc.children(recursive=True):
                 try:
                     child.cpu_percent(interval=None)
+                    self._children[child.pid] = child
                 except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
                     pass
         except (psutil.NoSuchProcess, psutil.AccessDenied) as exc:
@@ -116,8 +118,13 @@ class ProcessResourceSampler:
             # Child processes
             try:
                 children = self._proc.children(recursive=True)
+                current_children: dict[int, Any] = {}
                 for child in children:
                     try:
+                        previous = self._children.get(child.pid)
+                        if previous is not None and previous == child:
+                            child = previous
+                        current_children[child.pid] = child
                         c_mem = child.memory_info()
                         total_rss_bytes += c_mem.rss
                         c_cpu = child.cpu_percent(interval=None)
@@ -126,6 +133,7 @@ class ProcessResourceSampler:
                         proc_count += 1
                     except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
                         continue
+                self._children = current_children
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 pass
 
@@ -451,8 +459,11 @@ def build_soak_report(
         Structured JSON-serializable report dictionary.
     """
     summary = build_soak_summary(samples)
-    zero_crash = completed_normally and (
-        completed_duration_seconds >= requested_duration_seconds - 1.0
+    zero_crash = (
+        completed_normally
+        and termination_reason == "duration_completed"
+        and completed_duration_seconds >= requested_duration_seconds
+        and not any(s.shutdown_requested for s in samples)
     )
 
     sample_dicts = [asdict(s) for s in samples]

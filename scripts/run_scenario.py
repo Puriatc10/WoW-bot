@@ -124,11 +124,7 @@ async def execute_scenario(
         requested_duration_seconds=duration,
     )
 
-    components = await build_runtime(
-        scenario=scenario,
-        observer=collector,
-        seed=seed,
-    )
+    components = None
 
     start_mono = time.monotonic()
     completed_normally = False
@@ -136,6 +132,7 @@ async def execute_scenario(
     exit_code = 0
 
     try:
+        components = await build_runtime(scenario=scenario, observer=collector, seed=seed)
         await run_pipeline(components, run_duration_seconds=duration)
         completed_normally = True
         logger.info(f"Scenario '{scenario}' completed normally.")
@@ -145,11 +142,13 @@ async def execute_scenario(
         error_type = "CancelledError"
         exit_code = 130
     except Exception as exc:  # noqa: BLE001
-        logger.error(f"Scenario '{scenario}' failed with error: {type(exc).__name__}: {exc}")
+        logger.error(f"Scenario '{scenario}' failed with error: {type(exc).__name__}")
         completed_normally = False
         error_type = type(exc).__name__
         exit_code = 1
 
+    if components is not None:
+        collector.shutdown_requested = components.watchdog.shutdown_event.is_set()
     completed_duration = time.monotonic() - start_mono
 
     try:

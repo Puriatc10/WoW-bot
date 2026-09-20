@@ -37,6 +37,8 @@ async def test_build_runtime() -> None:
 
     # Clean up memory store
     await components.memory.close()
+    await components.llm_client.close()
+    components.watchdog.close()
 
 
 @pytest.mark.asyncio
@@ -69,6 +71,8 @@ async def test_run_pipeline_invalid_duration() -> None:
         await run_pipeline(components, run_duration_seconds=-5.0)
 
     await components.memory.close()
+    await components.llm_client.close()
+    components.watchdog.close()
 
 
 @pytest.mark.asyncio

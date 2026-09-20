@@ -37,6 +37,7 @@ Clock Domains:
 from __future__ import annotations
 
 import asyncio
+import math
 import signal
 import sys
 import time
@@ -105,6 +106,7 @@ def _put_latest[T](queue: asyncio.Queue[T], item: T) -> None:
     if queue.full():
         try:
             queue.get_nowait()
+            queue.task_done()
         except asyncio.QueueEmpty:
             pass
     try:
@@ -133,52 +135,66 @@ async def build_runtime(
     settings = config if config is not None else get_settings()
 
     memory = MemoryStore(settings.internal_dynamics.memory_db_path)
-    await memory.init()
+    llm_client: LLMClient | None = None
+    try:
+        await memory.init()
 
-    drives = Drives(settings)
-    oscillators = OscillatorBank(settings)
-    chaos = LorenzAttractor(
-        sigma=settings.internal_dynamics.lorenz_sigma,
-        rho=settings.internal_dynamics.lorenz_rho,
-        beta=settings.internal_dynamics.lorenz_beta,
-        dt=settings.internal_dynamics.lorenz_dt,
-    )
-    meta_state_generator = MetaStateGenerator(
-        config=settings,
-        drives=drives,
-        oscillators=oscillators,
-        chaos=chaos,
-        memory=memory,
-    )
+        drives = Drives(settings)
+        oscillators = OscillatorBank(settings, seed=seed)
+        chaos = LorenzAttractor(
+            sigma=settings.internal_dynamics.lorenz_sigma,
+            rho=settings.internal_dynamics.lorenz_rho,
+            beta=settings.internal_dynamics.lorenz_beta,
+            dt=settings.internal_dynamics.lorenz_dt,
+        )
+        meta_state_generator = MetaStateGenerator(
+            config=settings,
+            drives=drives,
+            oscillators=oscillators,
+            chaos=chaos,
+            memory=memory,
+        )
 
-    llm_client = LLMClient(settings)
-    strategist = Strategist(
-        config=settings,
-        llm_client=llm_client,
-        memory=memory,
-    )
+        llm_client = LLMClient(settings)
+        strategist = Strategist(
+            config=settings,
+            llm_client=llm_client,
+            memory=memory,
+        )
 
-    controller = Controller(dry_run=settings.executor.dry_run)
-    perception_rng = np.random.default_rng(seed) if seed is not None else None
-    perception = MockPerception(scenario=scenario, rng=perception_rng)
-    watchdog = WatchdogProcess()
-    idle_engine = IdleBehaviorEngine()
+        controller = Controller(dry_run=settings.executor.dry_run)
+        perception_rng = np.random.default_rng(seed) if seed is not None else None
+        perception = MockPerception(scenario=scenario, rng=perception_rng)
+        watchdog = WatchdogProcess()
+        idle_engine = IdleBehaviorEngine(rng=np.random.default_rng(seed))
 
-    return RuntimeComponents(
-        config=settings,
-        memory=memory,
-        drives=drives,
-        oscillators=oscillators,
-        chaos=chaos,
-        meta_state_generator=meta_state_generator,
-        llm_client=llm_client,
-        strategist=strategist,
-        controller=controller,
-        perception=perception,
-        watchdog=watchdog,
-        idle_engine=idle_engine,
-        observer=observer,
-    )
+        return RuntimeComponents(
+            config=settings,
+            memory=memory,
+            drives=drives,
+            oscillators=oscillators,
+            chaos=chaos,
+            meta_state_generator=meta_state_generator,
+            llm_client=llm_client,
+            strategist=strategist,
+            controller=controller,
+            perception=perception,
+            watchdog=watchdog,
+            idle_engine=idle_engine,
+            observer=observer,
+        )
+    except BaseException:
+        if llm_client is not None:
+            try:
+                await llm_client.close()
+            except Exception:  # noqa: BLE001 - Cleanup must preserve the construction failure.
+                logger.warning("LLM cleanup failed after runtime construction failure")
+        try:
+            await memory.close()
+        except Exception:  # noqa: BLE001
+            logger.warning("Memory cleanup failed after runtime construction failure")
+        raise
+
 
 
 async def perception_loop(
@@ -229,10 +245,9 @@ async def dynamics_loop(
         else:
             dt = float(game_state.timestamp) - float(last_game_state.timestamp)
 
-        if dt <= 0.0:
-            logger.warning(
-                f"Non-positive simulation dt detected ({dt:.4f}s). Skipping backward/static tick."
-            )
+        if not math.isfinite(float(game_state.timestamp)) or not math.isfinite(dt) or dt < 0.0:
+            raise ValueError("Simulation timestamp must be finite and must not move backward")
+        if dt == 0.0:
             perception_queue.task_done()
             continue
 
@@ -330,7 +345,9 @@ async def strategist_loop(
                     f"Strategist refresh suppressed by cooldown until sim_ts={next_refresh_allowed_at:.3f} (current={sim_ts:.3f})"
                 )
             else:
-                session_start = runtime_state.get("session_start") or sim_ts
+                session_start = runtime_state.get("session_start")
+                if session_start is None:
+                    session_start = sim_ts
                 dynamic_context = DynamicContext(
                     now=sim_ts,
                     session_start=session_start,
@@ -351,44 +368,29 @@ async def strategist_loop(
                         logger.error(f"Observer error in on_strategy_attempt: {exc}")
                         raise
 
-                try:
-                    new_strategy = await components.strategist.generate_strategy(
-                        snapshot.meta_state, dynamic_context
+                new_strategy = await components.strategist.generate_strategy(
+                    snapshot.meta_state, dynamic_context
+                )
+
+                # Task 4.4 exact-object check: distinguish replacement from fallback
+                if new_strategy is not prev_strategy_obj:
+                    logger.info(
+                        f"Genuinely new Strategy received: goal={new_strategy.goal!r} "
+                        f"valid_until={new_strategy.valid_until:.3f}"
                     )
+                    if components.observer is not None:
+                        try:
+                            components.observer.on_strategy_accepted(new_strategy, sim_ts)
+                        except Exception as exc:
+                            logger.error(f"Observer error in on_strategy_accepted: {exc}")
+                            raise
 
-                    # Task 4.4 exact-object check: distinguish replacement from fallback
-                    if new_strategy is not prev_strategy_obj:
-                        logger.info(
-                            f"Genuinely new Strategy received: goal={new_strategy.goal!r} "
-                            f"valid_until={new_strategy.valid_until:.3f}"
-                        )
-                        if components.observer is not None:
-                            try:
-                                components.observer.on_strategy_accepted(new_strategy, sim_ts)
-                            except Exception as exc:
-                                logger.error(f"Observer error in on_strategy_accepted: {exc}")
-                                raise
-
-                        next_refresh_allowed_at = 0.0
-                        last_planned_meta_state = snapshot.meta_state
-                        _put_latest(strategy_queue, new_strategy)
-                    else:
-                        logger.warning(
-                            "Strategy generation returned fallback/same strategy object. Setting 10s cooldown."
-                        )
-                        if components.observer is not None:
-                            try:
-                                components.observer.on_strategy_fallback(sim_ts)
-                            except Exception as exc:
-                                logger.error(f"Observer error in on_strategy_fallback: {exc}")
-                                raise
-
-                        next_refresh_allowed_at = sim_ts + STRATEGIST_RETRY_COOLDOWN_SECONDS
-
-                except Exception as exc:  # noqa: BLE001
-                    logger.error(
-                        f"Strategy generation failed without fallback: {type(exc).__name__}: {exc}. "
-                        f"Setting {STRATEGIST_RETRY_COOLDOWN_SECONDS}s cooldown."
+                    next_refresh_allowed_at = 0.0
+                    last_planned_meta_state = snapshot.meta_state
+                    _put_latest(strategy_queue, new_strategy)
+                else:
+                    logger.warning(
+                        "Strategy generation returned fallback/same strategy object. Setting 10s cooldown."
                     )
                     if components.observer is not None:
                         try:
@@ -397,7 +399,8 @@ async def strategist_loop(
                             logger.error(f"Observer error in on_strategy_fallback: {exc}")
                             raise
 
-                    next_refresh_allowed_at = sim_ts + STRATEGIST_RETRY_COOLDOWN_SECONDS
+                    failed_at = max(sim_ts, runtime_state.get("last_sim_timestamp", sim_ts))
+                    next_refresh_allowed_at = failed_at + STRATEGIST_RETRY_COOLDOWN_SECONDS
 
         # Task 5.4 idle intent integration (symbolic evaluation)
         idle_intent = components.idle_engine.maybe_generate(
@@ -530,7 +533,9 @@ async def watchdog_shutdown_bridge(
         if components.watchdog.shutdown_event.is_set():
             logger.error("Watchdog process requested emergency application shutdown!")
             shutdown_event.set()
-            break
+            raise RuntimeError("Watchdog requested shutdown")
+        if not components.watchdog.is_alive:
+            raise RuntimeError("Watchdog process exited unexpectedly")
         await asyncio.sleep(0.2)
 
 
@@ -551,6 +556,7 @@ async def run_pipeline(
     if run_duration_seconds is not None and (
         isinstance(run_duration_seconds, bool)
         or not isinstance(run_duration_seconds, (int, float))
+        or not math.isfinite(run_duration_seconds)
         or run_duration_seconds <= 0.0
     ):
         raise ValueError(
@@ -571,71 +577,75 @@ async def run_pipeline(
         "fsm_ref": None,
     }
 
-    components.watchdog.start()
-    logger.info("Started independent Watchdog process.")
-
-    tasks = [
-        asyncio.create_task(
-            perception_loop(components, perception_queue, shutdown_event),
-            name="perception_loop",
-        ),
-        asyncio.create_task(
-            dynamics_loop(
-                components,
-                perception_queue,
-                executor_queue,
-                strategist_queue,
-                shutdown_event,
-                runtime_state,
-            ),
-            name="dynamics_loop",
-        ),
-        asyncio.create_task(
-            strategist_loop(
-                components,
-                strategist_queue,
-                strategy_queue,
-                shutdown_event,
-                runtime_state,
-            ),
-            name="strategist_loop",
-        ),
-        asyncio.create_task(
-            executor_loop(
-                components,
-                executor_queue,
-                strategy_queue,
-                shutdown_event,
-                runtime_state,
-            ),
-            name="executor_loop",
-        ),
-        asyncio.create_task(
-            watchdog_heartbeat_loop(components, shutdown_event, runtime_state),
-            name="watchdog_heartbeat_loop",
-        ),
-        asyncio.create_task(
-            watchdog_shutdown_bridge(components, shutdown_event),
-            name="watchdog_shutdown_bridge",
-        ),
-    ]
-
+    tasks: list[asyncio.Task[None]] = []
     duration_timer_task: asyncio.Task[None] | None = None
-    if run_duration_seconds is not None:
-
-        async def _duration_timer() -> None:
-            await asyncio.sleep(float(run_duration_seconds))
-            logger.info(
-                f"Bounded run duration limit ({run_duration_seconds}s) reached. Requesting graceful shutdown."
-            )
-            shutdown_event.set()
-
-        duration_timer_task = asyncio.create_task(_duration_timer(), name="duration_timer")
-
+    shutdown_waiter: asyncio.Task[bool] | None = None
     first_exception: BaseException | None = None
-
     try:
-        done, _pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_EXCEPTION)
+        components.watchdog.start()
+        logger.info("Started independent Watchdog process.")
+
+        tasks = [
+            asyncio.create_task(
+                perception_loop(components, perception_queue, shutdown_event),
+                name="perception_loop",
+            ),
+            asyncio.create_task(
+                dynamics_loop(
+                    components,
+                    perception_queue,
+                    executor_queue,
+                    strategist_queue,
+                    shutdown_event,
+                    runtime_state,
+                ),
+                name="dynamics_loop",
+            ),
+            asyncio.create_task(
+                strategist_loop(
+                    components,
+                    strategist_queue,
+                    strategy_queue,
+                    shutdown_event,
+                    runtime_state,
+                ),
+                name="strategist_loop",
+            ),
+            asyncio.create_task(
+                executor_loop(
+                    components,
+                    executor_queue,
+                    strategy_queue,
+                    shutdown_event,
+                    runtime_state,
+                ),
+                name="executor_loop",
+            ),
+            asyncio.create_task(
+                watchdog_heartbeat_loop(components, shutdown_event, runtime_state),
+                name="watchdog_heartbeat_loop",
+            ),
+            asyncio.create_task(
+                watchdog_shutdown_bridge(components, shutdown_event),
+                name="watchdog_shutdown_bridge",
+            ),
+        ]
+
+        if run_duration_seconds is not None:
+
+            async def _duration_timer() -> None:
+                await asyncio.sleep(float(run_duration_seconds))
+                logger.info(
+                    f"Bounded run duration limit ({run_duration_seconds}s) reached. Requesting graceful shutdown."
+                )
+                shutdown_event.set()
+
+            duration_timer_task = asyncio.create_task(_duration_timer(), name="duration_timer")
+
+        shutdown_waiter = asyncio.create_task(shutdown_event.wait(), name="shutdown_waiter")
+        done, _pending = await asyncio.wait(
+            [*tasks, shutdown_waiter], return_when=asyncio.FIRST_COMPLETED
+        )
         for task in done:
             if not task.cancelled() and task.exception() is not None:
                 exc = task.exception()
@@ -643,10 +653,12 @@ async def run_pipeline(
                 if first_exception is None:
                     first_exception = exc
                 logger.error(
-                    f"Pipeline task '{task.get_name()}' failed with exception: {type(exc).__name__}: {exc}"
+                    f"Pipeline task '{task.get_name()}' failed with exception: {type(exc).__name__}"
                 )
                 shutdown_event.set()
 
+        if first_exception is None and not shutdown_event.is_set():
+            raise RuntimeError("Pipeline loop exited unexpectedly")
     finally:
         logger.info("Beginning graceful application pipeline cleanup...")
         shutdown_event.set()
@@ -658,34 +670,47 @@ async def run_pipeline(
             if not task.done():
                 task.cancel()
 
-        await asyncio.gather(*tasks, return_exceptions=True)
+        if shutdown_waiter is not None:
+            shutdown_waiter.cancel()
+        await asyncio.gather(
+            *tasks,
+            *([duration_timer_task] if duration_timer_task is not None else []),
+            *([shutdown_waiter] if shutdown_waiter is not None else []),
+            return_exceptions=True,
+        )
+        cleanup_errors: list[Exception] = []
 
         try:
             await components.controller.stop_all()
         except Exception as exc:  # noqa: BLE001
+            cleanup_errors.append(exc)
             logger.warning(f"Error calling controller.stop_all() during cleanup: {exc}")
 
         try:
             await components.llm_client.close()
         except Exception as exc:  # noqa: BLE001
+            cleanup_errors.append(exc)
             logger.warning(f"Error closing LLMClient during cleanup: {exc}")
 
         try:
             await components.memory.close()
         except Exception as exc:  # noqa: BLE001
+            cleanup_errors.append(exc)
             logger.warning(f"Error closing MemoryStore during cleanup: {exc}")
 
         try:
-            components.watchdog.stop()
-            components.watchdog.join(timeout=5.0)
+            await asyncio.to_thread(components.watchdog.close)
             logger.info("Watchdog process joined cleanly.")
         except Exception as exc:  # noqa: BLE001
+            cleanup_errors.append(exc)
             logger.warning(f"Error stopping Watchdog process during cleanup: {exc}")
 
         logger.info("Graceful application pipeline cleanup completed.")
 
         if first_exception is not None:
             raise first_exception
+        if cleanup_errors and sys.exc_info()[0] is None:
+            raise cleanup_errors[0]
 
 
 async def main() -> None:
@@ -716,12 +741,15 @@ async def main() -> None:
 
         watcher_task = asyncio.create_task(_signal_watcher())
 
-        await pipeline_task
-        watcher_task.cancel()
+        try:
+            await pipeline_task
+        finally:
+            watcher_task.cancel()
+            await asyncio.gather(watcher_task, return_exceptions=True)
     except asyncio.CancelledError:
         logger.info("Main pipeline cancelled.")
     except Exception as exc:  # noqa: BLE001
-        logger.error(f"Pipeline exited with error: {type(exc).__name__}: {exc}")
+        logger.error(f"Pipeline exited with error: {type(exc).__name__}")
         sys.exit(1)
 
 

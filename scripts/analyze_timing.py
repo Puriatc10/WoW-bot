@@ -103,7 +103,7 @@ def main() -> None:
         cv_val = analysis_result.get("sample_summary", {}).get("cv", 0.0)
         sys.stdout.write(f"  Sample CV: {cv_val:.4f}\n")
 
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - CLI failure exit
         sys.stderr.write(f"Error executing timing analysis: {exc}\n")
         sys.exit(1)
 

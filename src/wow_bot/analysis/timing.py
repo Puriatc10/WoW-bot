@@ -74,7 +74,7 @@ def load_timing_report(report_path: str | Path) -> dict[str, Any]:
         raise ValueError(f"Malformed JSON in scenario report {path}: {exc}") from exc
 
     if not isinstance(data, dict):
-        raise ValueError(f"Scenario report must be a JSON object, got {type(data).__name__}")
+        raise ValueError(f"Scenario report must be a JSON object, got {type(data).__name__}")  # noqa: TRY004 - report validation uses ValueError
 
     schema_ver = data.get("schema_version")
     if schema_ver != SCENARIO_REPORT_SCHEMA_VERSION:
@@ -101,16 +101,18 @@ def validate_timing_samples(
             or out-of-range parameter values.
     """
     if not isinstance(timing_dict, dict):
-        raise ValueError(f"'timing' section must be a dictionary, got {type(timing_dict).__name__}")
+        raise ValueError(f"'timing' section must be a dictionary, got {type(timing_dict).__name__}")  # noqa: TRY004 - report validation uses ValueError
 
     samples_ms = timing_dict.get("samples_ms")
+    if timing_dict.get("unit", "ms") != "ms":
+        raise ValueError("timing.unit must be ms")
     if not isinstance(samples_ms, list):
-        raise ValueError(f"'timing.samples_ms' must be a list, got {type(samples_ms).__name__}")
+        raise ValueError(f"'timing.samples_ms' must be a list, got {type(samples_ms).__name__}")  # noqa: TRY004 - report validation uses ValueError
 
     delays: list[float] = []
     for idx, raw in enumerate(samples_ms):
         if isinstance(raw, bool) or not isinstance(raw, (int, float)):
-            raise ValueError(f"Sample #{idx} in 'samples_ms' is not numeric: {raw!r}")
+            raise ValueError(f"Sample #{idx} in 'samples_ms' is not numeric: {raw!r}")  # noqa: TRY004 - report validation uses ValueError
         val = float(raw)
         if not math.isfinite(val):
             raise ValueError(f"Sample #{idx} in 'samples_ms' is non-finite: {val}")
@@ -127,7 +129,7 @@ def validate_timing_samples(
         return delays, None
 
     if not isinstance(detailed_samples_raw, list):
-        raise ValueError(f"'timing.samples' must be a list, got {type(detailed_samples_raw).__name__}")
+        raise ValueError(f"'timing.samples' must be a list, got {type(detailed_samples_raw).__name__}")  # noqa: TRY004 - report validation uses ValueError
 
     if len(detailed_samples_raw) != len(delays):
         raise ValueError(
@@ -137,7 +139,7 @@ def validate_timing_samples(
     detailed_samples: list[dict[str, Any]] = []
     for idx, s in enumerate(detailed_samples_raw):
         if not isinstance(s, dict):
-            raise ValueError(f"Detailed sample #{idx} in 'samples' must be dict, got {type(s).__name__}")
+            raise ValueError(f"Detailed sample #{idx} in 'samples' must be dict, got {type(s).__name__}")  # noqa: TRY004 - report validation uses ValueError
 
         ts = s.get("simulation_timestamp")
         if isinstance(ts, bool) or not isinstance(ts, (int, float)) or not math.isfinite(ts):
@@ -147,6 +149,8 @@ def validate_timing_samples(
         if isinstance(d_ms, bool) or not isinstance(d_ms, (int, float)) or not math.isfinite(d_ms):
             raise ValueError(f"Detailed sample #{idx} invalid delay_ms: {d_ms!r}")
         d_val = float(d_ms)
+        if d_val != delays[idx]:
+            raise ValueError(f"Detailed sample #{idx} delay_ms differs from samples_ms")
         if d_val <= 0.0 or d_val < LOWER_DELAY_MS or d_val > UPPER_DELAY_MS:
             raise ValueError(f"Detailed sample #{idx} delay_ms out of bounds: {d_val}")
 

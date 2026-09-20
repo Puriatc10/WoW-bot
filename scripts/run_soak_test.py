@@ -152,11 +152,7 @@ async def run_soak_test_async(
 
     soak_observer = SoakObserver()
 
-    components = await build_runtime(
-        scenario=scenario,
-        observer=soak_observer,
-        seed=seed,
-    )
+    components = None
 
     samples: list[SoakSample] = []
     start_mono = time.monotonic()
@@ -170,12 +166,13 @@ async def run_soak_test_async(
 
     async def _metrics_sampling_loop() -> None:
         """Periodically sample operational metrics and checkpoint report."""
+        assert components is not None
         while not shutdown_event.is_set():
             now_mono = time.monotonic()
             elapsed = max(0.0, now_mono - start_mono)
 
-            res = sampler.sample()
-            cur_log_size = calculate_log_size(resolved_log_path)
+            res = await asyncio.to_thread(sampler.sample)
+            cur_log_size = await asyncio.to_thread(calculate_log_size, resolved_log_path)
             watchdog_alive = components.watchdog.is_alive
             watchdog_shutdown = components.watchdog.shutdown_event.is_set()
 
@@ -205,23 +202,37 @@ async def run_soak_test_async(
                     log_path=resolved_log_path,
                     log_size_status=log_status,
                 )
-                write_soak_report_atomically(report_dict, output_path)
+                await asyncio.to_thread(write_soak_report_atomically, report_dict, output_path)
             except Exception as exc:  # noqa: BLE001
                 logger.warning(f"Error updating report checkpoint at '{output_path}': {exc}")
 
             try:
-                await asyncio.sleep(sample_interval)
-            except asyncio.CancelledError:
-                break
+                await asyncio.wait_for(shutdown_event.wait(), timeout=sample_interval)
+            except TimeoutError:
+                pass
 
-    sampler_task = asyncio.create_task(_metrics_sampling_loop(), name="soak_sampling_loop")
+    sampler_task: asyncio.Task[None] | None = None
+    pipeline_task: asyncio.Task[None] | None = None
 
     try:
+        components = await build_runtime(scenario=scenario, observer=soak_observer, seed=seed)
+        sampler_task = asyncio.create_task(_metrics_sampling_loop(), name="soak_sampling_loop")
         logger.info(
             f"Starting soak test: scenario='{scenario}' duration={duration}s "
             f"sample_interval={sample_interval}s seed={seed} output='{output_path}'"
         )
-        await run_pipeline(components, run_duration_seconds=duration)
+        pipeline_task = asyncio.create_task(run_pipeline(components, run_duration_seconds=duration))
+        done, _ = await asyncio.wait(
+            [pipeline_task, sampler_task], return_when=asyncio.FIRST_COMPLETED
+        )
+        if sampler_task in done:
+            await sampler_task
+            raise RuntimeError("Soak sampler exited unexpectedly")
+        await pipeline_task
+        if components.watchdog.shutdown_event.is_set():
+            raise RuntimeError("Watchdog requested shutdown")
+        if time.monotonic() - start_mono < duration:
+            raise RuntimeError("Pipeline returned before requested duration")
 
         completed_normally = True
         termination_reason = "duration_completed"
@@ -242,7 +253,7 @@ async def run_soak_test_async(
         exit_code = 130
 
     except Exception as exc:  # noqa: BLE001
-        if components.watchdog.shutdown_event.is_set():
+        if components is not None and components.watchdog.shutdown_event.is_set():
             logger.error("Soak test stopped due to Watchdog supervisor emergency shutdown.")
             completed_normally = False
             termination_reason = "watchdog_shutdown"
@@ -250,7 +261,7 @@ async def run_soak_test_async(
             failure_message = str(exc)
             exit_code = 1
         else:
-            logger.error(f"Soak test failed due to pipeline exception: {type(exc).__name__}: {exc}")
+            logger.error(f"Soak test failed due to pipeline exception: {type(exc).__name__}")
             completed_normally = False
             termination_reason = "pipeline_failure"
             failure_type = type(exc).__name__
@@ -259,23 +270,25 @@ async def run_soak_test_async(
 
     finally:
         shutdown_event.set()
-        if not sampler_task.done():
-            sampler_task.cancel()
-            await asyncio.gather(sampler_task, return_exceptions=True)
+        pending_tasks = [t for t in (sampler_task, pipeline_task) if t is not None]
+        if pipeline_task is not None and not pipeline_task.done():
+            pipeline_task.cancel()
+        # Finish any checkpoint I/O before the final report replaces it.
+        await asyncio.gather(*pending_tasks, return_exceptions=True)
 
         final_elapsed = max(0.0, time.monotonic() - start_mono)
 
         # Record final sample before exiting
         try:
-            res = sampler.sample()
+            res = await asyncio.to_thread(sampler.sample)
             final_sample = SoakSample(
                 elapsed_seconds=round(final_elapsed, 2),
                 cpu_percent=res.cpu_percent,
                 memory_rss_mb=res.memory_rss_mb,
-                log_size_bytes=calculate_log_size(resolved_log_path),
+                log_size_bytes=await asyncio.to_thread(calculate_log_size, resolved_log_path),
                 progress_token=soak_observer.progress_token,
-                watchdog_alive=components.watchdog.is_alive,
-                shutdown_requested=components.watchdog.shutdown_event.is_set(),
+                watchdog_alive=components.watchdog.is_alive if components is not None else None,
+                shutdown_requested=(components.watchdog.shutdown_event.is_set() if components is not None else False),
                 fsm_state=soak_observer.current_fsm_state,
             )
             samples.append(final_sample)
@@ -298,7 +311,7 @@ async def run_soak_test_async(
                 log_path=resolved_log_path,
                 log_size_status=log_status,
             )
-            write_soak_report_atomically(final_report, output_path)
+            await asyncio.to_thread(write_soak_report_atomically, final_report, output_path)
             logger.info(
                 f"Final soak evidence report successfully written to '{output_path}' "
                 f"(samples={len(samples)}, completed_normally={completed_normally})."

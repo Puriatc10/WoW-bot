@@ -491,7 +491,8 @@ class WatchdogProcess:
         poll_interval: float = WATCHDOG_POLL_INTERVAL_SECONDS,
     ) -> None:
         self._ctx = multiprocessing.get_context("spawn")
-        self._message_queue = message_queue if message_queue is not None else self._ctx.Queue()
+        self._owns_queue = message_queue is None
+        self._message_queue = message_queue if message_queue is not None else self._ctx.Queue(maxsize=256)
         self._shutdown_event = (
             shutdown_event if shutdown_event is not None else self._ctx.Event()
         )
@@ -543,6 +544,23 @@ class WatchdogProcess:
         """Wait for the Watchdog supervisor subprocess to exit."""
         if self._process is not None:
             self._process.join(timeout=timeout)
+
+    def close(self) -> None:
+        """Stop and reap the owned supervisor, escalating only after a grace period."""
+        self.stop()
+        if self._process is not None and self._process.pid is not None:
+            self.join(timeout=GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS)
+            if self.is_alive:
+                self._process.terminate()
+                self.join(timeout=GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS)
+            if self.is_alive:
+                raise RuntimeError("Watchdog process did not stop")
+            self._process.close()
+            self._process = None
+        if self._owns_queue:
+            # No consumer remains; do not block on a feeder flushing to a dead child.
+            self._message_queue.cancel_join_thread()
+            self._message_queue.close()
 
     @property
     def is_alive(self) -> bool:

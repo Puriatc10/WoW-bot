@@ -59,8 +59,12 @@ class MemoryStore:
         CREATE INDEX IF NOT EXISTS idx_timestamp
         ON memories(timestamp);
         """
-        await self._conn.executescript(schema_sql)
-        await self._conn.commit()
+        try:
+            await self._conn.executescript(schema_sql)
+            await self._conn.commit()
+        except BaseException:
+            await self.close()
+            raise
         log.info(f"Initialized MemoryStore at {self._db_path}")
 
     def _require_connection(self) -> aiosqlite.Connection:

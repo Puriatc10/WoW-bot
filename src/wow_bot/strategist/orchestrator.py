@@ -28,7 +28,7 @@ import openai
 
 from wow_bot.shared.interfaces import MetaState, Strategy
 from wow_bot.shared.logger import get_logger
-from wow_bot.strategist.llm_client import LLMClient
+from wow_bot.strategist.llm_client import LLMClient, LLMResponseError
 from wow_bot.strategist.parser import StrategyParseError, parse_strategy_response
 from wow_bot.strategist.prompts import DynamicContext, build_user_prompt, load_system_prompt
 
@@ -40,7 +40,7 @@ _EXPECTED_GENERATION_ERRORS = (
     openai.APIError,
     httpx.HTTPError,
     StrategyParseError,
-    RuntimeError,
+    LLMResponseError,
 )
 
 
@@ -159,7 +159,7 @@ class Strategist:
         except _EXPECTED_GENERATION_ERRORS as exc:
             is_expired = self.is_expired(valid_now) if self._current_strategy is not None else True
             logger.warning(
-                f"Strategy generation failed ({type(exc).__name__}: {exc}). "
+                f"Strategy generation failed ({type(exc).__name__}). "
                 f"has_previous={has_prev} previous_expired_at_now={is_expired}"
             )
             if self._current_strategy is not None:

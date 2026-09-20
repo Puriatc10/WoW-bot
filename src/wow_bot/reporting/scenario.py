@@ -304,7 +304,7 @@ def validate_report_dict(report: dict[str, Any]) -> None:
             raise ValueError(f"timing.samples must be a list, got {type(timing_samples).__name__}")
         for idx, ts_sample in enumerate(timing_samples):
             if not isinstance(ts_sample, dict):
-                raise ValueError(f"Timing detailed sample #{idx} must be dict, got {ts_sample!r}")
+                raise ValueError(f"Timing detailed sample #{idx} must be dict, got {ts_sample!r}")  # noqa: TRY004 - report validation uses ValueError
 
             sim_ts = ts_sample.get("simulation_timestamp")
             if isinstance(sim_ts, bool) or not isinstance(sim_ts, (int, float)) or not math.isfinite(sim_ts):

@@ -109,52 +109,20 @@ def test_human_delay_sample_mean_baseline() -> None:
 
 
 def test_human_delay_ks_distribution_check() -> None:
-    """Test E: Kolmogorov-Smirnov test vs log-normal model passes with p > 0.05.
+    """Check the clipped model using all samples and the fixed randomized PIT seed."""
+    from wow_bot.analysis.timing import compute_randomized_pit
 
-    Deterministic Baseline Metrics (Seed = 42, N = 1000):
-      base_ms = 200, fatigue = 0.5, chaos_component = 0.0
-      sigma = 0.4 + 0.2*0.0 + 0.3*0.5 = 0.55
-      mu = log(200)
-
-      Recorded sample statistics:
-        Sample count: 1000
-        Mean: 228.0631 ms
-        Std: 132.6220 ms
-        Clipped low (at 50 ms): 6
-        Clipped high (at 2000 ms): 0
-        Unclipped count: 994
-        KS statistic: 0.0352
-        KS p-value: 0.1662 (> 0.05)
-    """
-    fixed_seed = 42
-    sample_count = 1000
-    base_ms = 200
-    fatigue = 0.5
-    chaos = 0.0
-    sigma = 0.4 + 0.2 * chaos + 0.3 * fatigue
-
-    rng = np.random.default_rng(fixed_seed)
-    samples = np.array([
-        human_delay(base_ms=base_ms, fatigue=fatigue, chaos_component=chaos, rng=rng)
-        for _ in range(sample_count)
-    ])
-
-    low_clipped = np.sum(samples == MIN_DELAY_MS)
-    high_clipped = np.sum(samples == MAX_DELAY_MS)
-    unclipped = samples[(samples > MIN_DELAY_MS) & (samples < MAX_DELAY_MS)]
-
-    # Evaluate KS test on unclipped interior against the theoretical log-normal
-    ks_res = kstest(unclipped, "lognorm", args=(sigma, 0, base_ms))
-
-    # Acceptance criterion from roadmap
-    assert ks_res.pvalue > 0.05
-    assert low_clipped <= 10
-    assert high_clipped == 0
-
-
-# ============================================================================
-# Requirement G, H, I: Delay Input Validation
-# ============================================================================
+    rng = np.random.default_rng(42)
+    detailed = [
+        {
+            "delay_ms": human_delay(200, 0.5, 0.0, rng=rng),
+            "base_ms": 200, "fatigue": 0.5, "chaos_component": 0.0,
+        }
+        for _ in range(1000)
+    ]
+    pit = compute_randomized_pit(detailed)
+    assert len(pit) == 1000
+    assert kstest(pit, "uniform").pvalue > 0.05
 
 
 @pytest.mark.parametrize("invalid_base", [0, -1, -200, 1.5, "200", True, False, None])

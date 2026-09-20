@@ -32,6 +32,10 @@ LOCAL_HOSTNAMES: frozenset[str] = frozenset(
 )
 
 
+class LLMResponseError(RuntimeError):
+    """The endpoint returned no usable completion content."""
+
+
 def _validate_local_endpoint(base_url: str) -> None:
     """Ensure base_url targets a local loopback service.
 
@@ -172,13 +176,13 @@ class LLMClient:
                 latency = time.perf_counter() - start_time
 
                 if not response.choices:
-                    raise RuntimeError("LLM response contained no choices")
+                    raise LLMResponseError("LLM response contained no choices")
 
                 choice = response.choices[0]
                 message_content = choice.message.content
 
                 if message_content is None:
-                    raise RuntimeError("LLM response choice content was None")
+                    raise LLMResponseError("LLM response choice content was None")
 
                 result_text = message_content.strip()
 
@@ -209,13 +213,13 @@ class LLMClient:
                     backoff = 0.5 * (2 ** (attempt - 1))
                     logger.warning(
                         f"Transient failure on LLM query (attempt {attempt}/{total_attempts}): "
-                        f"{type(exc).__name__}: {exc}. Retrying in {backoff:.2f}s..."
+                        f"{type(exc).__name__}. Retrying in {backoff:.2f}s..."
                     )
                     await asyncio.sleep(backoff)
                 else:
                     logger.error(
                         f"LLM query failed permanently or exhausted retry budget (attempt {attempt}/{total_attempts}): "
-                        f"{type(exc).__name__}: {exc}"
+                        f"{type(exc).__name__}"
                     )
                     raise
 
@@ -233,10 +237,10 @@ class LLMClient:
         except asyncio.CancelledError:
             raise
         except (openai.APIError, httpx.HTTPError) as exc:
-            logger.debug(f"Health check failed for local LLM endpoint {self.base_url}: {type(exc).__name__}: {exc}")
+            logger.debug(f"Health check failed for local LLM endpoint {self.base_url}: {type(exc).__name__}")
             return False
         except Exception as exc:  # noqa: BLE001
-            logger.warning(f"Unexpected error during LLM health check: {type(exc).__name__}: {exc}")
+            logger.warning(f"Unexpected error during LLM health check: {type(exc).__name__}")
             return False
 
     async def close(self) -> None:

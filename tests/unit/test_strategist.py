@@ -16,7 +16,7 @@ import pytest
 
 from wow_bot.shared.config import Settings
 from wow_bot.shared.interfaces import MetaState, Strategy
-from wow_bot.strategist.llm_client import LLMClient
+from wow_bot.strategist.llm_client import LLMClient, LLMResponseError
 from wow_bot.strategist.orchestrator import Strategist
 from wow_bot.strategist.parser import StrategyParseError
 from wow_bot.strategist.prompts import DynamicContext
@@ -383,7 +383,7 @@ async def test_failed_generation_preserves_current_strategy(
     strategist = Strategist(mock_config, mock_llm_client, mock_memory)
     strategy_a = await strategist.generate_strategy(sample_meta_state, sample_dynamic_context)
 
-    mock_llm_client.query = AsyncMock(side_effect=RuntimeError("Unexpected LLM failure"))
+    mock_llm_client.query = AsyncMock(side_effect=LLMResponseError("Missing completion"))
 
     res = await strategist.generate_strategy(sample_meta_state, sample_dynamic_context)
 
@@ -432,7 +432,7 @@ async def test_expired_previous_strategy_returned_on_failure(
     assert strategist.is_expired(context_later.now) is True
 
     # Cause query failure
-    mock_llm_client.query = AsyncMock(side_effect=RuntimeError("LLM offline"))
+    mock_llm_client.query = AsyncMock(side_effect=LLMResponseError("Missing completion"))
 
     fallback_strategy = await strategist.generate_strategy(sample_meta_state, context_later)
 
@@ -535,21 +535,22 @@ async def test_cancellation_propagation(
 # Test U: Unexpected programming error propagation
 # ---------------------------------------------------------------------------
 @pytest.mark.asyncio
+@pytest.mark.parametrize("error_type", [TypeError, RuntimeError])
 async def test_unexpected_programming_error_propagation(
     mock_config: MagicMock,
     mock_llm_client: MagicMock,
     mock_memory: MagicMock,
     sample_meta_state: MetaState,
     sample_dynamic_context: DynamicContext,
+    error_type: type[Exception],
 ) -> None:
     mock_llm_client.query = AsyncMock(return_value=VALID_LLM_JSON)
     strategist = Strategist(mock_config, mock_llm_client, mock_memory)
     strategy_a = await strategist.generate_strategy(sample_meta_state, sample_dynamic_context)
 
-    # Cause TypeError inside generation flow
-    mock_llm_client.query = AsyncMock(side_effect=TypeError("Unexpected code bug"))
+    mock_llm_client.query = AsyncMock(side_effect=error_type("Unexpected code bug"))
 
-    with pytest.raises(TypeError, match="Unexpected code bug"):
+    with pytest.raises(error_type, match="Unexpected code bug"):
         await strategist.generate_strategy(sample_meta_state, sample_dynamic_context)
 
     assert strategist.current_strategy is strategy_a

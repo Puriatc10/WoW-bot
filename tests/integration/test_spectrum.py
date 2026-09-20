@@ -10,7 +10,7 @@ Methodology & Constraints:
   - Uses fixed seeds for OscillatorBank and deterministic GameState inputs.
   - Computes Welch PSD (scipy.signal.welch) on mean-centered signals over an explicit fitting band.
   - Fits log10(PSD) against log10(frequency) via linear regression.
-  - Project ROADMAP target: median slope across drives in [-1.5, -0.5] (pink noise ~ 1/f).
+  - Project ROADMAP target: each drive slope in [-1.5, -0.5] (pink noise ~ 1/f).
 """
 
 from __future__ import annotations
@@ -223,7 +223,7 @@ async def test_project_spectral_acceptance() -> None:
     """Requirement F: Full spectral analysis test on MetaState time series over 10,000 steps.
 
     Evaluates the composed Internal Dynamics subsystem against ROADMAP target:
-      median slope across drives in [-1.5, -0.5] (pink noise ~ 1/f).
+      each drive slope in [-1.5, -0.5] (pink noise ~ 1/f).
 
     Documented Simulation Configuration:
       - Sample count: 10,000
@@ -264,7 +264,7 @@ async def test_project_spectral_acceptance() -> None:
 
     # Report detailed diagnostics in failure message
     diagnostic_lines = [
-        f"Project Spectral Target: Median PSD slope in [{target_min}, {target_max}]",
+        f"Project Spectral Target: Each drive PSD slope in [{target_min}, {target_max}]",
         f"Measured Median Slope: {median_slope:.4f}",
         "Per-drive Slopes and Fit Quality (R²):",
     ]
@@ -284,4 +284,4 @@ async def test_project_spectral_acceptance() -> None:
     )
     diagnostic_msg = "\n".join(diagnostic_lines)
 
-    assert target_min <= median_slope <= target_max, diagnostic_msg
+    assert all(target_min <= slope <= target_max for slope in slopes.values()), diagnostic_msg
