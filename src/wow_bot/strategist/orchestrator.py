@@ -1,4 +1,6 @@
-"""Strategist Orchestrator (Task 4.4).
+"""# Pre-lab (MOCK_MODE)
+
+Strategist Orchestrator (Task 4.4).
 
 Composes the prompt builder, local LLM client, and strategy response parser into
 an integrated high-level strategy generator.
@@ -51,6 +53,7 @@ def _validate_timestamp(ts: float, name: str) -> float:
     return float(ts)
 
 
+# DEPRECATED: see STRATEGIST_RECONCILIATION.md
 class Strategist:
     """Orchestrates high-level strategy generation via local LLM.
 

@@ -1,4 +1,6 @@
-"""Response parser and validator for LLM Strategy output (Task 4.3).
+"""# Pre-lab (MOCK_MODE)
+
+Response parser and validator for LLM Strategy output (Task 4.3).
 
 Strictly parses raw text output from local LLM strategy generation and converts it
 into a validated domain ``Strategy`` object.
@@ -22,10 +24,12 @@ from typing import Any, Final, NoReturn
 
 from wow_bot.shared.interfaces import STRATEGY_GOALS, Strategy
 
+# DEPRECATED: see STRATEGIST_RECONCILIATION.md
 EXPECTED_TOP_LEVEL_KEYS: Final[frozenset[str]] = frozenset(
     {"reasoning", "goal", "region", "risk_tolerance", "priority", "constraints"}
 )
 
+# DEPRECATED: see STRATEGIST_RECONCILIATION.md
 EXPECTED_CONSTRAINT_KEYS: Final[frozenset[str]] = frozenset(
     {"max_deaths_per_hour", "max_session_minutes", "avoid_pvp"}
 )
@@ -78,6 +82,7 @@ def _unwrap_optional_code_fence(text: str) -> str:
     return "\n".join(inner_lines).strip()
 
 
+# DEPRECATED: see STRATEGIST_RECONCILIATION.md
 def parse_strategy_response(raw: str, valid_until: float) -> Strategy:
     """Parse and validate raw LLM output into a domain Strategy object.
 

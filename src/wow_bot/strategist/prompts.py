@@ -1,4 +1,6 @@
-"""Strategist prompt templates and dynamic context construction.
+"""# Pre-lab (MOCK_MODE)
+
+Strategist prompt templates and dynamic context construction.
 
 This module is a pure string-building layer separating:
   1. persistent player profile (static, in system_prompt.txt on disk);
@@ -31,6 +33,7 @@ log = get_logger("PROMPTS")
 _SYSTEM_PROMPT_PATH = Path(__file__).parent / "system_prompt.txt"
 
 
+# DEPRECATED: see STRATEGIST_RECONCILIATION.md
 @dataclass(frozen=True)
 class DynamicContext:
     """Runtime context supplied by the caller.
@@ -168,6 +171,7 @@ def _format_available_regions(regions: tuple[str, ...]) -> str:
     return ", ".join(regions)
 
 
+# DEPRECATED: see STRATEGIST_RECONCILIATION.md
 def build_user_prompt(
     meta_state: MetaState,
     dynamic_context: DynamicContext,
