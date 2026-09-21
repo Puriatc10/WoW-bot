@@ -4,6 +4,15 @@ Provides farm profile loading, loot/inventory management, vendor interactions, a
 high-level farm loop orchestration.
 """
 
+from wow_bot.farm.loot import (
+    InventoryTracker,
+    LootConfig,
+    LootController,
+    LootDecision,
+    LootError,
+    LootStateView,
+    LootStatus,
+)
 from wow_bot.farm.profile import (
     ALLOWED_CYCLE_KEYS,
     ALLOWED_NODE_REFERENCE_KEYS,
@@ -32,6 +41,13 @@ __all__ = [
     "CycleSpec",
     "FarmProfile",
     "FarmProfileError",
+    "InventoryTracker",
+    "LootConfig",
+    "LootController",
+    "LootDecision",
+    "LootError",
+    "LootStateView",
+    "LootStatus",
     "NodeReference",
     "RoutePreferences",
     "VendorReference",
