@@ -22,9 +22,22 @@ from wow_bot.strategist.prompts_v2 import (
     build_prompt,
     render_schema,
 )
+from wow_bot.strategist.vocab_v2 import (
+    DEFAULT_GOAL_RULES,
+    GoalRule,
+    RejectionReason,
+    StrategyCandidate,
+    TargetKind,
+    ValidatedStrategy,
+    VocabConfig,
+    VocabDecision,
+    VocabError,
+    VocabularyGuard,
+)
 
 __all__ = [
     "ALLOWED_GOALS",
+    "DEFAULT_GOAL_RULES",
     "CooldownCheck",
     "CooldownConfig",
     "CooldownDecision",
@@ -32,10 +45,19 @@ __all__ = [
     "CooldownGate",
     "DynamicContext",  # DEPRECATED: see STRATEGIST_RECONCILIATION.md
     "GameStateView",
+    "GoalRule",
     "MetaStateLike",
     "PromptBundle",
     "PromptConfig",
     "PromptError",
+    "RejectionReason",
+    "StrategyCandidate",
+    "TargetKind",
+    "ValidatedStrategy",
+    "VocabConfig",
+    "VocabDecision",
+    "VocabError",
+    "VocabularyGuard",
     "build_prompt",
     "build_user_prompt",  # DEPRECATED: see STRATEGIST_RECONCILIATION.md
     "load_system_prompt",
