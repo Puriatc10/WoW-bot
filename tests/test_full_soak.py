@@ -5,6 +5,8 @@ from __future__ import annotations
 import ast
 import asyncio
 import json
+import math
+import sys
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -27,6 +29,7 @@ from wow_bot.analysis.lab_soak_v2 import (
     LabSoakError,
     ResourceSnapshot,
     SoakSample,
+    make_default_resource_sampler,
     validate_soak_report_dict,
 )
 from wow_bot.executor.states import FSMState
@@ -794,6 +797,48 @@ def test_process_resource_sampler_log_file_size(tmp_path: Path) -> None:
     sampler = ProcessResourceSampler(log_path=log_file)
     snap = sampler.sample(100.0)
     assert snap.log_size_bytes == log_file.stat().st_size
+
+
+# ---------------------------------------------------------------------------
+# make_default_resource_sampler & WindowsResourceSampler Tests
+# ---------------------------------------------------------------------------
+
+@pytest.mark.skipif(sys.platform == "win32", reason="Linux/macOS test only")
+def test_make_default_resource_sampler_posix() -> None:
+    """Acceptance: make_default_resource_sampler returns ProcessResourceSampler on POSIX."""
+    sampler = make_default_resource_sampler()
+    assert isinstance(sampler, ProcessResourceSampler)
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows test only")
+def test_make_default_resource_sampler_windows() -> None:
+    """Acceptance: make_default_resource_sampler returns WindowsResourceSampler on Windows."""
+    from wow_bot.analysis.windows_sampler import WindowsResourceSampler
+
+    sampler = make_default_resource_sampler()
+    assert isinstance(sampler, WindowsResourceSampler)
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows test only")
+def test_windows_resource_sampler_unit() -> None:
+    """Acceptance unit test for WindowsResourceSampler on Windows:
+
+    - calls sample(now=0.0) twice
+    - asserts first call returns cpu_percent == 0.0
+    - asserts second call returns a finite non-negative cpu_percent
+    - asserts rss_bytes > 0
+    """
+    from wow_bot.analysis.windows_sampler import WindowsResourceSampler
+
+    sampler = WindowsResourceSampler()
+    snap1 = sampler.sample(now=0.0)
+    assert snap1.cpu_percent == 0.0
+    assert snap1.rss_bytes > 0
+
+    snap2 = sampler.sample(now=1.0)
+    assert math.isfinite(snap2.cpu_percent)
+    assert snap2.cpu_percent >= 0.0
+    assert snap2.rss_bytes > 0
 
 
 # ---------------------------------------------------------------------------
