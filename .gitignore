@@ -11,3 +11,5 @@ reports/
 .mypy_cache/
 .ruff_cache/
 *.db
+runs/
+*.egg-info/
