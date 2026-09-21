@@ -1,3 +1,4 @@
+# Pre-lab (MOCK_MODE)
 """Async Application Pipeline entry point (Task 7.1).
 
 Integrates Perception (MockPerception), Internal Dynamics (MetaStateGenerator),
