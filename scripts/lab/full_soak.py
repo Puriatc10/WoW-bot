@@ -19,20 +19,17 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-try:
-    import resource
-except ImportError:
-    resource = None  # type: ignore[assignment]
-
 from wow_bot.actuation.backends.focus_null import NullFocusBackend
 from wow_bot.analysis.lab_soak_v2 import (
     LabSoakError,
+    ProcessResourceSampler,
     ResourceSampler,
     ResourceSnapshot,
     SoakConfig,
     SoakReport,
     SoakSample,
     build_soak_report,
+    make_default_resource_sampler,
     write_soak_report,
 )
 from wow_bot.combat.rotation import load_rotation_from_dict
@@ -48,52 +45,6 @@ from wow_bot.lab.runner_v2 import (
 )
 from wow_bot.session import Session, SessionInfo, _make_config_snapshot, _utc_now_iso
 from wow_bot.watchdog.metrics import ProgressSample
-
-
-class ProcessResourceSampler:
-    """ResourceSampler implementation capturing current process RSS, CPU, and log size."""
-
-    def __init__(self, *, log_path: Path | None = None) -> None:
-        if resource is None:
-            raise RuntimeError("resource module is unavailable on this platform")
-        self._log_path = log_path
-        self._prev_cpu_time: float | None = None
-        self._prev_ts: float | None = None
-
-    def sample(self, now: float) -> ResourceSnapshot:
-        """Sample current process resource usage at given timestamp `now`."""
-        rusage = resource.getrusage(resource.RUSAGE_SELF)
-        if sys.platform == "darwin":
-            rss_bytes = int(rusage.ru_maxrss)
-        else:
-            rss_bytes = int(rusage.ru_maxrss * 1024)
-
-        t = os.times()
-        cpu_time = float(t.user + t.system)
-
-        if self._prev_cpu_time is None or self._prev_ts is None:
-            cpu_percent = 0.0
-        else:
-            dt = now - self._prev_ts
-            if dt > 0.0:
-                dcpu = cpu_time - self._prev_cpu_time
-                cpu_percent = float(max(0.0, (dcpu / dt) * 100.0))
-            else:
-                cpu_percent = 0.0
-
-        self._prev_cpu_time = cpu_time
-        self._prev_ts = now
-
-        log_size_bytes = 0
-        if self._log_path is not None and self._log_path.exists():
-            log_size_bytes = self._log_path.stat().st_size
-
-        return ResourceSnapshot(
-            ts=now,
-            cpu_percent=cpu_percent,
-            rss_bytes=rss_bytes,
-            log_size_bytes=log_size_bytes,
-        )
 
 
 def make_soak_sleep(
@@ -484,7 +435,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     try:
-        sampler = ProcessResourceSampler(
+        sampler = make_default_resource_sampler(
             log_path=args.session_dir / "app.log"
         )
     except Exception as exc:  # noqa: BLE001
@@ -544,6 +495,15 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     return 1
+
+
+__all__ = [
+    "ProcessResourceSampler",
+    "main",
+    "make_soak_sleep",
+    "parse_args",
+    "run_soak_async",
+]
 
 
 if __name__ == "__main__":

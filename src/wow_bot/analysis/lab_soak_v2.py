@@ -11,10 +11,16 @@ import json
 import math
 import os
 import statistics
+import sys
 from collections.abc import Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Protocol
+
+try:
+    import resource
+except ImportError:
+    resource = None  # type: ignore[assignment]
 
 SOAK_SCHEMA_VERSION: int = 2
 
@@ -56,6 +62,72 @@ class ResourceSampler(Protocol):
 
     def sample(self, now: float) -> ResourceSnapshot:
         ...
+
+
+class ProcessResourceSampler:
+    """ResourceSampler implementation capturing current process RSS, CPU, and log size on Linux/macOS."""
+
+    def __init__(self, *, log_path: Path | None = None) -> None:
+        if resource is None:
+            raise RuntimeError("resource module is unavailable on this platform")
+        self._log_path = log_path
+        self._prev_cpu_time: float | None = None
+        self._prev_ts: float | None = None
+
+    def sample(self, now: float) -> ResourceSnapshot:
+        """Sample current process resource usage at given timestamp `now`."""
+        rusage = resource.getrusage(resource.RUSAGE_SELF)
+        if sys.platform == "darwin":
+            rss_bytes = int(rusage.ru_maxrss)
+        else:
+            rss_bytes = int(rusage.ru_maxrss * 1024)
+
+        t = os.times()
+        cpu_time = float(t.user + t.system)
+
+        if self._prev_cpu_time is None or self._prev_ts is None:
+            cpu_percent = 0.0
+        else:
+            dt = now - self._prev_ts
+            if dt > 0.0:
+                dcpu = cpu_time - self._prev_cpu_time
+                cpu_percent = float(max(0.0, (dcpu / dt) * 100.0))
+            else:
+                cpu_percent = 0.0
+
+        self._prev_cpu_time = cpu_time
+        self._prev_ts = now
+
+        log_size_bytes = 0
+        if self._log_path is not None and self._log_path.exists():
+            log_size_bytes = self._log_path.stat().st_size
+
+        return ResourceSnapshot(
+            ts=now,
+            cpu_percent=cpu_percent,
+            rss_bytes=rss_bytes,
+            log_size_bytes=log_size_bytes,
+        )
+
+
+def make_default_resource_sampler(
+    *,
+    log_path: Path | None = None,
+) -> ResourceSampler:
+    """Construct platform-appropriate default resource sampler.
+
+    Returns ProcessResourceSampler on Linux/macOS and WindowsResourceSampler on Windows.
+    Raises LabSoakError on unsupported platforms.
+    """
+    if sys.platform.startswith("linux") or sys.platform == "darwin":
+        return ProcessResourceSampler(log_path=log_path)
+
+    if sys.platform == "win32":
+        from wow_bot.analysis.windows_sampler import WindowsResourceSampler
+
+        return WindowsResourceSampler(log_path=log_path)
+
+    raise LabSoakError(f"Unsupported platform for default resource sampler: {sys.platform!r}")
 
 
 class ProcessHandle(Protocol):
@@ -670,6 +742,7 @@ __all__ = [
     "SOAK_SCHEMA_VERSION",
     "LabSoakError",
     "ProcessHandle",
+    "ProcessResourceSampler",
     "ResourceSampler",
     "ResourceSnapshot",
     "SoakConfig",
@@ -678,6 +751,7 @@ __all__ = [
     "SoakSummary",
     "build_soak_report",
     "build_soak_summary",
+    "make_default_resource_sampler",
     "validate_soak_report_dict",
     "write_soak_report",
 ]

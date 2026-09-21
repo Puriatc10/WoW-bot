@@ -14,7 +14,10 @@ Environment:
   - NullDriver, NullFocusBackend, NullDelay
   - FakeLlmClient (scripted responses)
   - MockPerception
+  - Platform-appropriate resource sampler (ProcessResourceSampler on Linux/macOS, WindowsResourceSampler on Windows).
   - No game client. No Ollama. No OS input.
+
+On Windows, the harness uses ctypes directly via GetProcessMemoryInfo and GetProcessTimes. Results are equivalent to the Linux path for the purposes of the stability check. The operator on Windows 11 confirmed WSL is not available in their environment; the Windows path is the supported fallback.
 
 Procedure:
   1. Build the runtime via lab.runner_v2.build_lab_runtime_async with:
