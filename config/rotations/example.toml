@@ -1,0 +1,56 @@
+# Default spell ID to cast when no rule conditions match
+default_spell_id = "shoot"
+
+# List of combat rotation rules
+[[rules]]
+
+# Priority ranking for rule evaluation (lower integer evaluated first)
+priority = 10
+
+# Identifier of the spell to cast when conditions pass
+spell_id = "shadow_word_pain"
+
+# List of conditions that must all evaluate to true for the rule to apply
+[[rules.conditions]]
+
+# Kind of condition check
+kind = "target_lacks_debuff"
+
+# Value to compare against for target_lacks_debuff
+value = "shadow_word_pain"
+
+[[rules.conditions]]
+
+# Kind of condition check
+kind = "target_in_range"
+
+# Value to compare against for target_in_range
+value = true
+
+[[rules]]
+
+# Priority ranking for rule evaluation (lower integer evaluated first)
+priority = 20
+
+# Identifier of the spell to cast when conditions pass
+spell_id = "mind_blast"
+
+# List of conditions that must all evaluate to true for the rule to apply
+[[rules.conditions]]
+
+# Kind of condition check
+kind = "spell_ready"
+
+# Value to compare against for spell_ready
+value = true
+
+# Specific spell ID whose cooldown status is checked
+spell_id = "mind_blast"
+
+[[rules.conditions]]
+
+# Kind of condition check
+kind = "resource_at_least"
+
+# Value to compare against for resource_at_least
+value = 20.0

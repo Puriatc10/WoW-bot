@@ -13,3 +13,4 @@ reports/
 *.db
 runs/
 *.egg-info/
+config/lab.toml
