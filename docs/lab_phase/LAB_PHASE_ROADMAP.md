@@ -1327,56 +1327,137 @@ subsystems; it does not own the top-level loop.
 - No upward memory trend.
 - RESULTS.md with all metrics.
 
-### T12.1 — Long Soak
+### T12.0 — Phase 12 Scope Clarification (doc only)
 
-**Depends on:** Phase 11, T10.4
+**Depends on:** T11.4
+
 **Deliverables:**
-- `runs/lab/<session>/soak_report.json`
-- `docs/SOAK_PROTOCOL.md`
+- `docs/lab_phase/LAB_PHASE_ROADMAP.md` (this update)
+- `docs/SOAK_PROTOCOL.md` (new)
 
 **Contract:**
-- 24-72 h run with telemetry at fixed cadence.
-- Protocol documented: start, stop, abort conditions.
+- Phase 12 runs in two roles: agent (Jules) and operator (user). Each task's acceptance criteria MUST distinguish what the agent verifies from what the operator verifies.
+- The soak is 1 hour in MOCK_MODE. A 24-hour soak and a real-perception soak are explicitly deferred to a future Phase 13.
+- Tests are split into two categories:
+    PERCEPTION-AGNOSTIC (run in Phase 12):
+      actuation delivery, humanizer PIT/KS/CV, reflex jitter, FSM transitions, navigator algorithm correctness, orchestrator JSON validity, watchdog health and loop detection, world model queries, system stability (crash count, RSS trend, log integrity), report schema validity.
+    PERCEPTION-DEPENDENT (NOT run in Phase 12):
+      distance-to-target as a research finding, cycle success rate as a research finding, obstacle avoidance, human-likeness versus real gameplay, in-game farm outcome.
+- RESULTS.md MUST contain an "Explicit Non-Claims" section listing what the mock soak does NOT establish.
 
 **Acceptance:**
-- [ ] Manual lab: 24 h, zero crashes.
-- [ ] RSS trend slope not significantly positive.
+- LAB_PHASE_ROADMAP.md contains this T12.0 block.
+- T12.1, T12.2, T12.3 each list acceptance criteria split into "Agent verifies" and "Operator verifies".
+- SOAK_PROTOCOL.md exists with the mock/real distinction.
 
-**Out of scope:** multi-machine.
+**Out of scope:** any code, test, or config change.
 
-### T12.2 — Aggregate Analysis
+### T12.1 — MOCK Soak Harness and Protocol
+
+**Depends on:** T12.0
+
+**Deliverables:**
+- `docs/SOAK_PROTOCOL.md` (refined from T12.0 template)
+- `scripts/lab/full_soak.py`
+- `tests/test_full_soak.py`
+
+**Contract:**
+- `full_soak.py` is a thin glue layer over `lab.runner_v2.build_lab_runtime_async` plus `analysis.lab_soak_v2`.
+- It supports a `--duration-s` flag (default 60.0) and a `--mode` flag (default MOCK).
+- In MOCK_MODE it MUST use `NullDriver`, `NullFocusBackend`, `NullDelay`, `FakeLlmClient`, and `MockPerception`. No OS input, no network, no Ollama.
+- It writes `soak_report.json` into the session directory using `analysis.lab_soak_v2.write_soak_report`.
+- The test suite runs a 60 s smoke soak in MOCK_MODE and asserts: zero crashes, valid `soak_report.json`, no growth in RSS beyond a configured tolerance, no key held after exit.
+- 1-hour execution is NOT performed by the agent. The operator runs it on a real machine.
+- 24-hour execution is deferred to a future Phase 13.
+
+**Acceptance:**
+- Agent verifies:
+    * `tests/test_full_soak.py` passes with a 60 s MOCK soak.
+    * `soak_report.json` is schema-valid via `analysis.lab_soak_v2.validate_soak_report_dict`.
+    * zero crashes in the smoke run.
+    * `docs/SOAK_PROTOCOL.md` documents the mock/real split and the "what is tested / what is not" table.
+- Operator verifies (after merge):
+    * A 1-hour MOCK soak completes with zero crashes.
+    * `soak_report.json` is archived in the session directory.
+    * RSS slope is within tolerance.
+- NOT reported as a research finding:
+    * cycle success rate.
+    * in-game farm outcome.
+
+**Out of scope:**
+- Real-perception soak.
+- 24-hour soak.
+- Any OS input.
+- Any LLM call.
+
+### T12.2 — Cross-Session Aggregate Analysis
 
 **Depends on:** T12.1
+
 **Deliverables:**
 - `src/wow_bot/analysis/aggregate.py`
 - `tests/test_aggregate.py`
 
 **Contract:**
-- Across-session metrics: crash rate, cycle success rate, humanizer
-  distribution fit, reflex latency distribution.
+- `aggregate.py` reads one or more session directories (each containing `report_v2.json` and optionally `soak_report.json`) and produces a cross-session aggregate JSON.
+- Aggregates include: crash rate, reflex jitter distribution, humanizer interval distribution fit (PIT/KS p-values), orchestrator JSON validity rate, watchdog transition counts, loop detection counts, log size trend, RSS trend.
+- Aggregates MUST NOT include outcome-dependent metrics (cycle success rate, distance to target) as research findings. If present in the input, they are reported under a section named "internal_counters_not_research_findings".
+- Pure library, no I/O beyond reading report files. Atomic write of the aggregate JSON.
+- No LLM calls. No DB access beyond reading reports.
 
 **Acceptance:**
-- [ ] Test: aggregate on synthetic sessions.
-- [ ] Test: outputs schema-valid.
+- Agent verifies:
+    * Unit tests on synthetic session directories pass.
+    * Output schema is stable and versioned.
+    * The "internal_counters_not_research_findings" section is present and empty when inputs lack those counters.
+- Operator verifies (after merge):
+    * `aggregate.py` runs on the 1-hour MOCK soak session.
+    * The resulting aggregate is archived.
 
-**Out of scope:** ML clustering.
+**Out of scope:**
+- Any comparison against real-perception data.
+- Any ML clustering or anomaly detection.
 
-### T12.3 — Results Write-up
+### T12.3 — Results Write-up (Skeleton)
 
 **Depends on:** T12.2
+
 **Deliverables:**
 - `docs/RESULTS.md`
 
 **Contract:**
-- Sections: setup, metrics, spectral, timing, soak, threats to validity,
-  explicit non-claims (no retail, no anti-cheat bypass, no third-party).
+- The agent produces a SKELETON with all section headings and placeholder markers of the form "<TO_FILL_AFTER_MOCK_SOAK>". No real numbers.
+- Required sections:
+    - Setup (versions, environment, how the soak was run)
+    - Metrics (cross-session aggregate summary)
+    - Spectral (from `analysis.lab_spectral_v2` on the soak)
+    - Timing (from `analysis.lab_timing_v2` on the soak)
+    - Soak (from the 1-hour MOCK soak)
+    - Threats to Validity
+    - Explicit Non-Claims (MANDATORY)
+- Explicit Non-Claims MUST list at minimum:
+    * We do NOT claim the agent farmed successfully in a real game. Perception was mocked; outcomes were not observed.
+    * We do NOT claim anti-cheat evasion.
+    * We do NOT claim humanizer timing would evade detection.
+    * We do NOT claim 24-hour stability. Only 1 hour was measured.
+  And MUST claim at minimum:
+    * The control stack (reflex, FSM, humanizer, navigation, combat) operates deterministically over the measured window in MOCK_MODE.
+    * The humanizer interval distribution matches the theoretical truncated lognormal (PIT/KS validated).
+- The operator fills the placeholders after the 1-hour soak.
+- A future Phase 13 will add a separate `RESULTS_REAL.md` for the real-perception soak.
 
 **Acceptance:**
-- [ ] All numbers traced to a session id.
-- [ ] Non-claims section present.
-- [ ] Reproducibility commands included.
+- Agent verifies:
+    * `docs/RESULTS.md` exists with all required sections.
+    * The Explicit Non-Claims section is present and non-empty.
+    * Every metric field is a placeholder, not a fabricated number.
+- Operator verifies (after the 1-hour soak):
+    * Placeholders are replaced with real numbers.
+    * Every number is traceable to a session id.
 
-**Out of scope:** publication formatting.
+**Out of scope:**
+- Any real number before the operator's soak.
+- Any real-perception content.
 
 ---
 
