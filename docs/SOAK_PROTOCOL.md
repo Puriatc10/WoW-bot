@@ -17,10 +17,25 @@ Environment:
   - No game client. No Ollama. No OS input.
 
 Procedure:
-  1. Build the runtime via lab.runner_v2.build_lab_runtime_async with the mock stack.
-  2. Run for 1 hour wall-clock.
-  3. Soak telemetry written to soak_report.json in the session directory.
-  4. On completion, archive the session directory.
+  1. Build the runtime via lab.runner_v2.build_lab_runtime_async with:
+       - mode="MOCK"
+       - driver_name="null"
+       - focus_backend=NullFocusBackend()
+       - sleep=<soak_sleep wrapper>
+       - llm_client=<FakeLlmClient>
+       - include_reflex_loop=False
+       - include_watchdog=False
+  2. Run run_lab_loop_async(runtime, max_cycles=LARGE, stop_event=<asyncio.Event>).
+  3. The soak_sleep wrapper sets stop_event when runtime.clock() >= started_at + duration_s.
+  4. Samples are collected at sample_interval_s in the same wrapper.
+  5. After the loop returns, build the SoakReport via lab_soak_v2.build_soak_report and write it via lab_soak_v2.write_soak_report to session_dir / "soak_report.json".
+  6. Exit codes:
+       - 0: soak completed (STOP_EVENT_SET or MAX_CYCLES_REACHED)
+       - 1: soak ended with an abnormal runner status (HEALTH_CRITICAL, LOOP_DETECTED, MAX_FAILURES_REACHED, RUNTIME_ERROR, BUILD_ERROR)
+       - 2: argument or setup error
+       - 3: unhandled exception during the run
+
+Note: This procedure is the ONLY supported Phase 12 soak. Any LAB-mode soak requires Phase 13 infrastructure and is out of scope.
 
 Metrics reported:
   - crash count (target: zero)
