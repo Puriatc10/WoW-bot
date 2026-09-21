@@ -30,6 +30,16 @@ from wow_bot.farm.profile import (
     profile_summary,
     validate_profile_dict,
 )
+from wow_bot.farm.vendor import (
+    VendorConfig,
+    VendorController,
+    VendorError,
+    VendorLocation,
+    VendorResult,
+    VendorStateView,
+    VendorStatus,
+    resolve_vendor_node,
+)
 
 __all__ = [
     "ALLOWED_CYCLE_KEYS",
@@ -50,8 +60,16 @@ __all__ = [
     "LootStatus",
     "NodeReference",
     "RoutePreferences",
+    "VendorConfig",
+    "VendorController",
+    "VendorError",
+    "VendorLocation",
     "VendorReference",
+    "VendorResult",
+    "VendorStateView",
+    "VendorStatus",
     "load_profile",
     "profile_summary",
+    "resolve_vendor_node",
     "validate_profile_dict",
 ]
