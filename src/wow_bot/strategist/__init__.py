@@ -7,6 +7,16 @@ from wow_bot.strategist.cooldown_v2 import (
     CooldownError,
     CooldownGate,
 )
+from wow_bot.strategist.orchestrator_v2 import (
+    JsonStrategy,
+    LlmClient,
+    OrchestratorConfig,
+    OrchestratorError,
+    OrchestratorOutcome,
+    OrchestratorResult,
+    OrchestratorV2,
+    parse_strategy_json,
+)
 from wow_bot.strategist.prompts import (
     DynamicContext,  # DEPRECATED: see STRATEGIST_RECONCILIATION.md
     build_user_prompt,  # DEPRECATED: see STRATEGIST_RECONCILIATION.md
@@ -46,7 +56,14 @@ __all__ = [
     "DynamicContext",  # DEPRECATED: see STRATEGIST_RECONCILIATION.md
     "GameStateView",
     "GoalRule",
+    "JsonStrategy",
+    "LlmClient",
     "MetaStateLike",
+    "OrchestratorConfig",
+    "OrchestratorError",
+    "OrchestratorOutcome",
+    "OrchestratorResult",
+    "OrchestratorV2",
     "PromptBundle",
     "PromptConfig",
     "PromptError",
@@ -61,5 +78,6 @@ __all__ = [
     "build_prompt",
     "build_user_prompt",  # DEPRECATED: see STRATEGIST_RECONCILIATION.md
     "load_system_prompt",
+    "parse_strategy_json",
     "render_schema",
 ]
