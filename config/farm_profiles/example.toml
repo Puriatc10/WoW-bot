@@ -1,0 +1,42 @@
+# Top-level profile metadata
+[profile]
+# The name of the farm profile
+name = "Elwynn Herb Route"
+# The schema version of the profile specification
+schema_version = 1
+# Description of the farming route
+description = "Basic herb harvesting loop in Elwynn Forest"
+
+# High-level cycle configuration defining nodes, vendor, repair, and stop conditions
+[cycle]
+# Vendor reference for selling junk items and buying supplies
+vendor = { kind = "vendor", name = "Vendor Thomas" }
+# Repair reference for repairing armor and weapons (defaults to vendor if omitted)
+repair = { kind = "vendor", name = "Vendor Thomas" }
+# Stop farming loop when inventory is completely full
+stop_when_inventory_full = true
+# Number of cycles after which to stop farming (0 means unlimited)
+stop_after_cycles = 0
+# Ordered list of farm nodes to visit in each cycle
+nodes = [
+  # First farm node reference
+  { kind = "node", name = "Peacebloom Bush 1", behavior_hints = { action = "gather" } },
+  # Second farm node reference
+  { kind = "node", name = "Silverleaf Bush 1" }
+]
+
+# Route preferences for navigation planning
+[route_preferences]
+# Node kinds to avoid during path planning
+avoid_kinds = ["mob"]
+# Node kinds to prefer during path planning
+prefer_kinds = ["waypoint"]
+# Maximum allowed detour factor relative to shortest path
+max_detour_factor = 1.5
+
+# Arbitrary string metadata for human documentation
+[metadata]
+# Target area for this route
+zone = "Elwynn Forest"
+# Recommended character level range
+level_range = "1-10"
