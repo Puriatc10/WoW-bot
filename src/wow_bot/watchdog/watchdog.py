@@ -29,14 +29,27 @@ import math
 import multiprocessing
 import multiprocessing.synchronize
 import queue
+import threading
 import time
 from dataclasses import dataclass
-from enum import Enum, auto
-from typing import Any, Final, Protocol
+from typing import Any, Callable, Final, Protocol
 
 from wow_bot.shared.logger import get_logger
+from wow_bot.watchdog.health import HealthState
+from wow_bot.watchdog.shutdown import ShutdownReason
 
 log = get_logger("WATCHDOG")
+
+#: Explicit mapping from internal Watchdog reason strings to ShutdownReason enum values.
+_WATCHDOG_TO_SHUTDOWN_REASON: Final[dict[str, ShutdownReason]] = {
+    "heartbeat_missing": ShutdownReason.HEALTH_CRITICAL,
+    "heartbeat_stale": ShutdownReason.HEALTH_CRITICAL,
+    "progress_stalled": ShutdownReason.HEALTH_CRITICAL,
+    "recovery_loop": ShutdownReason.HEALTH_CRITICAL,
+    "recovery_timeout": ShutdownReason.HEALTH_CRITICAL,
+    "death_loop": ShutdownReason.HEALTH_CRITICAL,
+    "high_cpu": ShutdownReason.HEALTH_CRITICAL,
+}
 
 # Threshold constants frozen per Task 6.1 specifications
 WATCHDOG_POLL_INTERVAL_SECONDS: Final[float] = 0.5
@@ -56,23 +69,6 @@ GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS: Final[float] = 10.0
 
 class WatchdogProtocolError(ValueError):
     """Raised when an IPC message or state update violates Watchdog protocol invariants."""
-
-
-class HealthState(Enum):
-    """Explicit health state classification."""
-
-    HEALTHY = auto()
-    DEGRADED = auto()
-    CRITICAL = auto()
-
-    def severity_rank(self) -> int:
-        """Return integer rank for severity comparison (HEALTHY=0 < DEGRADED=1 < CRITICAL=2)."""
-        ranks = {
-            HealthState.HEALTHY: 0,
-            HealthState.DEGRADED: 1,
-            HealthState.CRITICAL: 2,
-        }
-        return ranks[self]
 
 
 @dataclass(frozen=True)
@@ -415,6 +411,7 @@ def watchdog_process_main(
     process_control: ProcessControl | None = None,
     clock: Clock | None = None,
     resource_probe: ResourceProbe | None = None,
+    reason_queue: Any | None = None,
 ) -> None:
     """Main execution loop for independent Watchdog process.
 
@@ -451,10 +448,19 @@ def watchdog_process_main(
             last_reported_state = report.state
 
         if report.state == HealthState.CRITICAL and not shutdown_event.is_set():
+            raw_reason = report.reasons[0] if report.reasons else "unknown"
+            mapped_reason = _WATCHDOG_TO_SHUTDOWN_REASON.get(
+                raw_reason, ShutdownReason.HEALTH_CRITICAL
+            )
             log.error(
                 f"CRITICAL health detected! Reasons: {list(report.reasons)} | "
                 f"Requesting graceful shutdown via Event."
             )
+            if reason_queue is not None:
+                try:
+                    reason_queue.put_nowait(mapped_reason.value)
+                except Exception:  # noqa: BLE001
+                    pass
             shutdown_event.set()
 
         if shutdown_event.is_set():
@@ -480,7 +486,23 @@ def watchdog_process_main(
 
 
 class WatchdogProcess:
-    """Process owner interface for managing the independent Watchdog subprocess."""
+    """Process owner interface for managing the independent Watchdog supervisor subprocess.
+
+    Role: DETECTION ONLY.
+    The WatchdogProcess monitors process health and heartbeats in an independent
+    subprocess. When health reaches CRITICAL, it requests a shutdown by setting
+    the multiprocessing shutdown_event and invoking registered on_shutdown_request
+    callbacks with a ShutdownReason. It does NOT execute shutdown operations
+    directly.
+
+    Contract:
+    - Main process subscribes to shutdown requests via on_shutdown_request(callback).
+    - When health reaches CRITICAL, all callbacks are invoked once with a ShutdownReason.
+    - Callbacks are executed outside internal locks with exception isolation.
+    - If the main process does not complete graceful shutdown within
+      GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS, WatchdogProcess escalates to forced process
+      termination via ProcessControl.
+    """
 
     def __init__(
         self,
@@ -489,6 +511,7 @@ class WatchdogProcess:
         stop_event: multiprocessing.synchronize.Event | None = None,
         supervised_process: Any | None = None,
         poll_interval: float = WATCHDOG_POLL_INTERVAL_SECONDS,
+        reason_queue: Any | None = None,
     ) -> None:
         self._ctx = multiprocessing.get_context("spawn")
         self._owns_queue = message_queue is None
@@ -497,9 +520,15 @@ class WatchdogProcess:
             shutdown_event if shutdown_event is not None else self._ctx.Event()
         )
         self._stop_event = stop_event if stop_event is not None else self._ctx.Event()
+        self._reason_queue = reason_queue if reason_queue is not None else self._ctx.Queue(maxsize=16)
         self._supervised_process = supervised_process
         self._poll_interval = poll_interval
         self._process: Any = None
+        self._callbacks: list[Callable[[ShutdownReason], None]] = []
+        self._lock = threading.Lock()
+        self._triggered = False
+        self._triggered_reason: ShutdownReason | None = None
+        self._monitor_thread: threading.Thread | None = None
 
     @property
     def message_queue(self) -> Any:
@@ -513,8 +542,76 @@ class WatchdogProcess:
     def stop_event(self) -> multiprocessing.synchronize.Event:
         return self._stop_event
 
+    def on_shutdown_request(
+        self, callback: Callable[[ShutdownReason], None]
+    ) -> None:
+        """Register a callback to be invoked when Watchdog requests shutdown.
+
+        Callbacks are invoked exactly once with a ShutdownReason when health
+        evaluation reaches CRITICAL. Order of registration is preserved. Callbacks
+        are invoked outside internal locks.
+        """
+        with self._lock:
+            self._callbacks.append(callback)
+            already_triggered = self._triggered
+            reason = self._triggered_reason
+
+        if already_triggered and reason is not None:
+            try:
+                callback(reason)
+            except Exception as exc:  # noqa: BLE001
+                log.error(f"Error in late shutdown request callback: {exc}")
+
+    def trigger_shutdown(
+        self, reason: ShutdownReason = ShutdownReason.HEALTH_CRITICAL
+    ) -> None:
+        """Explicitly trigger shutdown callbacks and set shutdown event."""
+        self._shutdown_event.set()
+        self._trigger_callbacks(reason)
+
+    def _trigger_callbacks(self, reason: ShutdownReason) -> None:
+        with self._lock:
+            if self._triggered:
+                return
+            self._triggered = True
+            self._triggered_reason = reason
+            callbacks_to_call = list(self._callbacks)
+
+        for cb in callbacks_to_call:
+            try:
+                cb(reason)
+            except Exception as exc:  # noqa: BLE001
+                log.error(f"Error in shutdown request callback: {exc}")
+
+    def _start_monitor_thread(self) -> None:
+        if self._monitor_thread is not None and self._monitor_thread.is_alive():
+            return
+        self._monitor_thread = threading.Thread(
+            target=self._monitor_loop,
+            name="watchdog_shutdown_monitor",
+            daemon=True,
+        )
+        self._monitor_thread.start()
+
+    def _monitor_loop(self) -> None:
+        while not self._stop_event.is_set():
+            if self._shutdown_event.wait(timeout=0.1):
+                reason_val: str | None = None
+                if self._reason_queue is not None:
+                    try:
+                        reason_val = self._reason_queue.get_nowait()
+                    except Exception:  # noqa: BLE001
+                        pass
+                reason = (
+                    ShutdownReason(reason_val)
+                    if reason_val in [r.value for r in ShutdownReason]
+                    else ShutdownReason.HEALTH_CRITICAL
+                )
+                self._trigger_callbacks(reason)
+                break
+
     def start(self) -> None:
-        """Start the independent Watchdog supervisor subprocess."""
+        """Start the independent Watchdog supervisor subprocess and monitor thread."""
         if self._process is not None and bool(self._process.is_alive()):
             return
 
@@ -531,10 +628,12 @@ class WatchdogProcess:
                 "stop_event": self._stop_event,
                 "poll_interval": self._poll_interval,
                 "process_control": proc_control,
+                "reason_queue": self._reason_queue,
             },
             daemon=False,
         )
         self._process.start()
+        self._start_monitor_thread()
 
     def stop(self) -> None:
         """Signal the Watchdog supervisor subprocess to stop cleanly."""
@@ -548,6 +647,8 @@ class WatchdogProcess:
     def close(self) -> None:
         """Stop and reap the owned supervisor, escalating only after a grace period."""
         self.stop()
+        if self._monitor_thread is not None and self._monitor_thread.is_alive():
+            self._monitor_thread.join(timeout=1.0)
         if self._process is not None and self._process.pid is not None:
             self.join(timeout=GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS)
             if self.is_alive:
@@ -561,6 +662,9 @@ class WatchdogProcess:
             # No consumer remains; do not block on a feeder flushing to a dead child.
             self._message_queue.cancel_join_thread()
             self._message_queue.close()
+            if self._reason_queue is not None:
+                self._reason_queue.cancel_join_thread()
+                self._reason_queue.close()
 
     @property
     def is_alive(self) -> bool:

@@ -28,6 +28,15 @@ class HealthState(str, Enum):
     DEGRADED = "degraded"
     CRITICAL = "critical"
 
+    def severity_rank(self) -> int:
+        """Return integer rank for severity comparison (HEALTHY=0 < DEGRADED=1 < CRITICAL=2)."""
+        ranks = {
+            HealthState.HEALTHY: 0,
+            HealthState.DEGRADED: 1,
+            HealthState.CRITICAL: 2,
+        }
+        return ranks[self]
+
 
 class MetricName(str, Enum):
     """Monitored progress metrics."""

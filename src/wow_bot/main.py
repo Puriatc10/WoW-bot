@@ -63,6 +63,7 @@ from wow_bot.shared.logger import get_logger
 from wow_bot.strategist.llm_client import LLMClient
 from wow_bot.strategist.orchestrator import Strategist
 from wow_bot.strategist.prompts import DynamicContext
+from wow_bot.watchdog.shutdown import GracefulShutdown, ShutdownReason, ShutdownReport
 from wow_bot.watchdog.watchdog import DeathEventMessage, HeartbeatMessage, WatchdogProcess
 
 logger = get_logger("MAIN")
@@ -168,7 +169,7 @@ async def build_runtime(
         watchdog = WatchdogProcess()
         idle_engine = IdleBehaviorEngine(rng=np.random.default_rng(seed))
 
-        return RuntimeComponents(
+        rc = RuntimeComponents(
             config=settings,
             memory=memory,
             drives=drives,
@@ -183,6 +184,9 @@ async def build_runtime(
             idle_engine=idle_engine,
             observer=observer,
         )
+
+        _wire_watchdog_shutdown(rc)
+        return rc
     except BaseException:
         if llm_client is not None:
             try:
@@ -522,12 +526,54 @@ async def watchdog_heartbeat_loop(
         await asyncio.sleep(WATCHDOG_HEARTBEAT_INTERVAL_SECONDS)
 
 
+class _WatchdogShutdownWire:
+    """Internal helper binding WatchdogProcess callback to GracefulShutdown state."""
+
+    def __init__(self, components: RuntimeComponents) -> None:
+        self.components = components
+        self.async_loop: asyncio.AbstractEventLoop | None = None
+        self.shutdown_event: asyncio.Event | None = None
+        self.graceful_shutdown: GracefulShutdown | None = None
+        self.last_report: ShutdownReport | None = None
+
+    def on_shutdown_request(self, reason: ShutdownReason) -> None:
+        logger.error(f"Watchdog requested graceful shutdown with reason={reason.value!r}")
+        if self.graceful_shutdown is None:
+            self.graceful_shutdown = GracefulShutdown(
+                safety=getattr(self.components, "safety", None),
+                actuator=getattr(self.components, "actuator", None),
+                session=getattr(self.components, "session", None),
+                health=getattr(self.components, "health", None),
+            )
+
+        self.last_report = self.graceful_shutdown.run(reason)
+
+        if self.shutdown_event is not None:
+            if self.async_loop is not None and self.async_loop.is_running():
+                self.async_loop.call_soon_threadsafe(self.shutdown_event.set)
+            else:
+                self.shutdown_event.set()
+
+
+def _wire_watchdog_shutdown(components: RuntimeComponents) -> None:
+    """Wire WatchdogProcess shutdown request callback to GracefulShutdown ONCE."""
+    wire = _WatchdogShutdownWire(components)
+    if hasattr(components.watchdog, "on_shutdown_request"):
+        components.watchdog.on_shutdown_request(wire.on_shutdown_request)
+    setattr(components, "_watchdog_shutdown_wire", wire)
+
+
 async def watchdog_shutdown_bridge(
     components: RuntimeComponents,
     shutdown_event: asyncio.Event,
 ) -> None:
     """Bridge Watchdog process shutdown_event IPC signal into local asyncio shutdown_event."""
     logger.info("Watchdog shutdown bridge started.")
+
+    wire: _WatchdogShutdownWire | None = getattr(components, "_watchdog_shutdown_wire", None)
+    if wire is not None:
+        wire.async_loop = asyncio.get_running_loop()
+        wire.shutdown_event = shutdown_event
 
     while not shutdown_event.is_set():
         if components.watchdog.shutdown_event.is_set():
@@ -731,6 +777,7 @@ async def main() -> None:
         except NotImplementedError:  # Windows signal compatibility
             pass
 
+    exit_code = 0
     try:
         pipeline_task = asyncio.create_task(run_pipeline(components))
 
@@ -750,7 +797,14 @@ async def main() -> None:
         logger.info("Main pipeline cancelled.")
     except Exception as exc:  # noqa: BLE001
         logger.error(f"Pipeline exited with error: {type(exc).__name__}")
-        sys.exit(1)
+        exit_code = 1
+
+    wire = getattr(components, "_watchdog_shutdown_wire", None)
+    if wire is not None and wire.last_report is not None:
+        exit_code = wire.last_report.exit_code
+
+    if exit_code != 0:
+        sys.exit(exit_code)
 
 
 if __name__ == "__main__":

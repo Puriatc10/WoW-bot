@@ -1,5 +1,14 @@
 """Watchdog layer: independent health supervisor and graceful shutdown manager."""
 
+from wow_bot.watchdog.health import (
+    HealthConfig,
+    HealthError,
+    HealthState,
+    HealthStateMachine,
+    HealthTransition,
+    MetricName,
+    MetricThresholds,
+)
 from wow_bot.watchdog.metrics import (
     MetricsConfig,
     MetricsError,
@@ -38,7 +47,6 @@ from wow_bot.watchdog.watchdog import (
     DeathEventMessage,
     DummyResourceProbe,
     HealthReport,
-    HealthState,
     HeartbeatMessage,
     MultiprocessingProcessControl,
     ProcessControl,
@@ -71,9 +79,15 @@ __all__ = [
     "DeathEventMessage",
     "DummyResourceProbe",
     "GracefulShutdown",
+    "HealthConfig",
+    "HealthError",
     "HealthReport",
     "HealthState",
+    "HealthStateMachine",
+    "HealthTransition",
     "HeartbeatMessage",
+    "MetricName",
+    "MetricThresholds",
     "MetricsConfig",
     "MetricsError",
     "MultiprocessingProcessControl",
