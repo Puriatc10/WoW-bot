@@ -76,6 +76,34 @@ async def test_run_pipeline_invalid_duration() -> None:
 
 
 @pytest.mark.asyncio
+async def test_watchdog_shutdown_wiring_integration() -> None:
+    """Verify WatchdogProcess on_shutdown_request triggers GracefulShutdown."""
+    components = await build_runtime()
+
+    mock_strategy = Strategy(
+        goal="farm_herbs",
+        region="elwynn",
+        risk_tolerance=0.2,
+        priority=["herbs"],
+        constraints={},
+        valid_until=10000000000.0,
+    )
+    components.strategist.generate_strategy = AsyncMock(return_value=mock_strategy)  # type: ignore[method-assign]
+
+    # Trigger Watchdog shutdown explicitly
+    from wow_bot.watchdog.shutdown import ShutdownReason
+    components.watchdog.trigger_shutdown(ShutdownReason.HEALTH_CRITICAL)
+
+    with pytest.raises(RuntimeError, match="Watchdog requested shutdown"):
+        await run_pipeline(components)
+
+    wire = getattr(components, "_watchdog_shutdown_wire", None)
+    assert wire is not None
+    assert wire.last_report is not None
+    assert wire.last_report.reason == ShutdownReason.HEALTH_CRITICAL
+
+
+@pytest.mark.asyncio
 async def test_pipeline_snapshot_dataclass() -> None:
     gs = GameState(
         timestamp=100.0,
