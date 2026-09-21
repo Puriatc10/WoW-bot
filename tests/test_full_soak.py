@@ -8,6 +8,7 @@ import json
 import math
 import sys
 import time
+import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -21,6 +22,7 @@ except ImportError:
 
 from scripts.lab.full_soak import (
     ProcessResourceSampler,
+    _load_rotation,
     main,
     make_soak_sleep,
     run_soak_async,
@@ -168,8 +170,8 @@ def test_files(tmp_path: Path) -> tuple[Path, Path, Path, Path]:
         encoding="utf-8",
     )
 
-    rotation_path = tmp_path / "rotation.json"
-    rotation_path.write_text('{"rules": []}\n', encoding="utf-8")
+    rotation_path = tmp_path / "rotation.toml"
+    rotation_path.write_text('default_spell_id = "shoot"\nrules = []\n', encoding="utf-8")
 
     world_db_path = tmp_path / "world.db"
 
@@ -839,6 +841,43 @@ def test_windows_resource_sampler_unit() -> None:
     assert math.isfinite(snap2.cpu_percent)
     assert snap2.cpu_percent >= 0.0
     assert snap2.rss_bytes > 0
+
+
+# ---------------------------------------------------------------------------
+# Rotation TOML Parsing Tests
+# ---------------------------------------------------------------------------
+
+def test_load_rotation_toml(tmp_path: Path) -> None:
+    """Acceptance: _load_rotation correctly parses a valid rotation TOML file."""
+    rot_path = tmp_path / "valid_rotation.toml"
+    rot_path.write_text(
+        'default_spell_id = "shoot"\n'
+        '[[rules]]\n'
+        'priority = 10\n'
+        'spell_id = "fireball"\n'
+        '[[rules.conditions]]\n'
+        'kind = "spell_ready"\n'
+        'value = true\n'
+        'spell_id = "fireball"\n',
+        encoding="utf-8",
+    )
+    rot_config = _load_rotation(rot_path)
+    assert len(rot_config.rules) >= 1
+    assert rot_config.rules[0].spell_id == "fireball"
+
+
+def test_example_rotation_toml_parses() -> None:
+    """Acceptance: config/rotations/example.toml parses via tomllib.load and _load_rotation."""
+    example_path = Path("config/rotations/example.toml")
+    if not example_path.exists():
+        pytest.skip("config/rotations/example.toml fixture does not exist")
+
+    with open(example_path, "rb") as f:
+        data = tomllib.load(f)
+    assert "default_spell_id" in data
+
+    rot_config = _load_rotation(example_path)
+    assert len(rot_config.rules) >= 1
 
 
 # ---------------------------------------------------------------------------

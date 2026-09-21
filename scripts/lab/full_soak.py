@@ -14,6 +14,7 @@ import json
 import os
 import sys
 import time
+import tomllib
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -32,7 +33,7 @@ from wow_bot.analysis.lab_soak_v2 import (
     make_default_resource_sampler,
     write_soak_report,
 )
-from wow_bot.combat.rotation import load_rotation_from_dict
+from wow_bot.combat.rotation import RotationConfig, load_rotation_from_dict
 from wow_bot.config import ConfigError, load_config
 from wow_bot.executor.states import FSMState
 from wow_bot.farm.profile import load_profile
@@ -182,15 +183,7 @@ async def run_soak_async(
 
     config = load_config(config_path)
     profile = load_profile(profile_path)
-
-    if not rotation_path.exists():
-        raise LabSoakError(f"Rotation file does not exist: '{rotation_path}'")
-    try:
-        with open(rotation_path, "r", encoding="utf-8") as f:  # noqa: ASYNC230
-            rot_raw = json.load(f)
-        rotation = load_rotation_from_dict(rot_raw)
-    except Exception as exc:
-        raise LabSoakError(f"Failed to load rotation file '{rotation_path}': {exc}") from exc
+    rotation = _load_rotation(rotation_path)
 
     started_at = clock()
     deadline = started_at + duration_s
@@ -330,6 +323,18 @@ async def run_soak_async(
         session.close("soak_complete")
         if runtime is not None and hasattr(runtime.world, "close"):
             await runtime.world.close()
+
+
+def _load_rotation(rotation_path: Path) -> RotationConfig:
+    """Load rotation configuration from a TOML file."""
+    if not rotation_path.exists():
+        raise LabSoakError(f"Rotation file does not exist: '{rotation_path}'")
+    try:
+        with open(rotation_path, "rb") as f:
+            rot_raw = tomllib.load(f)
+        return load_rotation_from_dict(rot_raw)
+    except Exception as exc:
+        raise LabSoakError(f"Failed to load rotation file '{rotation_path}': {exc}") from exc
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -499,6 +504,7 @@ def main(argv: list[str] | None = None) -> int:
 
 __all__ = [
     "ProcessResourceSampler",
+    "_load_rotation",
     "main",
     "make_soak_sleep",
     "parse_args",
