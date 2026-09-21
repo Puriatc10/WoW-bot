@@ -5,9 +5,27 @@ from wow_bot.strategist.prompts import (
     build_user_prompt,  # DEPRECATED: see STRATEGIST_RECONCILIATION.md
     load_system_prompt,
 )
+from wow_bot.strategist.prompts_v2 import (
+    ALLOWED_GOALS,
+    GameStateView,
+    MetaStateLike,
+    PromptBundle,
+    PromptConfig,
+    PromptError,
+    build_prompt,
+    render_schema,
+)
 
 __all__ = [
+    "ALLOWED_GOALS",
     "DynamicContext",  # DEPRECATED: see STRATEGIST_RECONCILIATION.md
+    "GameStateView",
+    "MetaStateLike",
+    "PromptBundle",
+    "PromptConfig",
+    "PromptError",
+    "build_prompt",
     "build_user_prompt",  # DEPRECATED: see STRATEGIST_RECONCILIATION.md
     "load_system_prompt",
+    "render_schema",
 ]
