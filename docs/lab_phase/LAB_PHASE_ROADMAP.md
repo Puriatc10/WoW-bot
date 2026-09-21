@@ -1276,24 +1276,44 @@ recovery.
 
 **Out of scope:** auction house.
 
-### T11.4 — Farm Loop Orchestrator
+### T11.4 — Farm Loop Orchestrator (LAB_MODE)
 
-**Depends on:** T11.1, T11.2, T11.3
-**Deliverables:**
-- `src/wow_bot/farm/loop.py`
-- `tests/test_farm_loop.py`
+Depends on: T11.0, T11.1, T11.2, T11.3
 
-**Contract:**
-- Cycle: select node → navigate → farm → loot → check inventory →
-  sell/repair → return.
-- Integrates Reflex, FSM v2, World Model, Humanizer, Watchdog.
+Deliverables:
+- src/wow_bot/lab/runner_v2.py
+- src/wow_bot/lab/__init__.py
+- scripts/lab/run_farm_v2.py
+- tests/test_lab_runner_v2.py
 
-**Acceptance:**
-- [ ] Test: single cycle completes in MOCK_MODE.
-- [ ] Manual lab: 1 h run without hard_stuck.
-- [ ] ≥50 cycles in the run.
+Contract:
+- Cycle: select node → navigate → farm → loot → check inventory
+  → sell/repair → return. Implemented as `LabRuntime` plus
+  `run_lab_loop` / `run_lab_loop_async` in `lab/runner_v2.py`.
+- Integrates Reflex (T2.x), FSM v2 (T3.3), World Model (T4.x),
+  Navigator (T5.3), Combat (T6.x), Humanizer (T7.4), Strategist v2
+  (T9.4), Watchdog (T8.x), and the farm subsystems (T11.1, T11.2,
+  T11.3).
+- The cycle body lives in `_run_cycle`; the composite FSM behavior
+  dispatches by state (STUCK_RECOVERY → RecoveryBehavior,
+  COMBAT → CombatLoop, LOOTING → LootController, otherwise None).
+- `main.py` remains frozen for MOCK_MODE. This is the LAB_MODE
+  entry point only (T11.0 OPTION A).
 
-**Out of scope:** multi-zone routing.
+Acceptance:
+- Test: single cycle completes in MOCK_MODE (covered by
+  `tests/test_lab_runner_v2.py`).
+- Manual lab: 1 h run without hard_stuck.
+- ≥50 cycles in the run.
+
+Out of scope: multi-zone routing.
+
+Note: the original roadmap defined this task as `farm/loop.py`.
+T11.0 OPTION A redefined the LAB_MODE integration point as
+`lab/runner_v2.py` to avoid duplicating wiring across `farm/` and
+`lab/`. The farm cycle logic lives in `runner_v2._run_cycle`. The
+`farm/` package still owns the profile, loot, and vendor
+subsystems; it does not own the top-level loop.
 
 ---
 
