@@ -1,0 +1,17 @@
+{
+  "session_id": "20260921-181008-c3889ce9",
+  "started_at": "2026-09-21T18:10:08Z",
+  "mode": "LAB",
+  "config_snapshot": {
+    "lab_mode": true,
+    "server_allowlist": [
+      "127.0.0.1:8080"
+    ],
+    "isolation_sentinel": "127.0.0.1:9999",
+    "kill_switch_key": "F12",
+    "session_root": "runs/lab",
+    "dry_run": true,
+    "max_session_seconds": 3600,
+    "log_level": "INFO"
+  }
+}

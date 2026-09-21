@@ -1,0 +1,9 @@
+{"event": "world_loaded", "payload": {"db_path": ":memory:", "schema_version": 1, "opened_existing": false, "duration_ms": 3.730823, "node_count": 0, "edge_count": 0, "entity_count": 0}, "ts": "2026-09-21T18:09:23Z"}
+{"event": "world_sync", "stats": {"player_node_created": true, "player_node_updated": false, "entities_upserted": 0, "entities_skipped": 0, "target_seen": false}, "ts": "2026-09-21T18:09:23Z"}
+{"event": "cooldown_allowed", "ts": 644.15477939, "state": "IDLE"}
+{"event": "strategist_prompt_error", "error": "AttributeError", "ts": "2026-09-21T18:09:23Z"}
+{"event": "world_sync", "stats": {"player_node_created": true, "player_node_updated": false, "entities_upserted": 0, "entities_skipped": 0, "target_seen": false}, "ts": "2026-09-21T18:09:23Z"}
+{"event": "world_sync", "stats": {"player_node_created": true, "player_node_updated": false, "entities_upserted": 0, "entities_skipped": 0, "target_seen": false}, "ts": "2026-09-21T18:09:23Z"}
+{"event": "world_sync", "stats": {"player_node_created": true, "player_node_updated": false, "entities_upserted": 0, "entities_skipped": 0, "target_seen": false}, "ts": "2026-09-21T18:09:23Z"}
+{"event": "world_sync", "stats": {"player_node_created": true, "player_node_updated": false, "entities_upserted": 0, "entities_skipped": 0, "target_seen": false}, "ts": "2026-09-21T18:09:23Z"}
+{"event": "lab_run_finished", "status": "max_cycles_reached", "cycles_completed": 5, "failures": 0, "duration_s": 0.2620186049999802, "reason": "max_cycles_reached", "ts": "2026-09-21T18:09:23Z"}
