@@ -1,4 +1,5 @@
-"""SQLite-backed async persistent memory store (Task 3.4).
+"""# Pre-lab (MOCK_MODE)
+SQLite-backed async persistent memory store (Task 3.4).
 
 Stores events along with the 5-dimensional internal drive state vector present
 when each event occurred. Provides Euclidean-distance vector similarity recall,

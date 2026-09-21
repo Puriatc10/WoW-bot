@@ -1,4 +1,6 @@
-"""Internal dynamics: drives, oscillators, chaos, memory, and MetaState generation."""
+"""# Pre-lab (MOCK_MODE)
+Internal dynamics: drives, oscillators, chaos, memory, and MetaState generation.
+"""
 
 from wow_bot.internal_dynamics.drives import Drives
 

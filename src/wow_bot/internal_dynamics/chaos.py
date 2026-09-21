@@ -1,4 +1,5 @@
-"""Lorenz chaotic attractor module (Task 3.3).
+"""# Pre-lab (MOCK_MODE)
+Lorenz chaotic attractor module (Task 3.3).
 
 Provides deterministic chaotic modulation via classical Runge-Kutta 4th order (RK4)
 numerical integration of the canonical Lorenz dynamical system.

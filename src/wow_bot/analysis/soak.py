@@ -1,4 +1,5 @@
-"""Long-Running 24-Hour Soak Test Analysis and Instrumentation Module (Task 8.3).
+"""# Pre-lab (MOCK_MODE)
+Long-Running 24-Hour Soak Test Analysis and Instrumentation Module (Task 8.3).
 
 Provides operational resource sampling, log size measurement, linear memory trend
 analysis, summary metric aggregation, and atomic JSON report generation for soak
@@ -11,7 +12,7 @@ Public API:
     - :class:`ResourceSampler`
     - :class:`ProcessResourceSampler`
     - :class:`FakeResourceSampler`
-    - :class:`SoakObserver`
+    - :class:`SoakObserver` (DEPRECATED: see REPORTING_RECONCILIATION.md)
     - :func:`calculate_log_size`
     - :func:`resolve_log_path`
     - :func:`calculate_memory_slope`
@@ -165,7 +166,10 @@ class FakeResourceSampler:
 
 
 class SoakObserver:
-    """Passive pipeline observer tracking progress tokens and FSM state for soak testing."""
+    """Passive pipeline observer tracking progress tokens and FSM state for soak testing.
+
+    DEPRECATED: Pre-lab soak observer. See REPORTING_RECONCILIATION.md.
+    """
 
     def __init__(self) -> None:
         self.progress_token: int = 0

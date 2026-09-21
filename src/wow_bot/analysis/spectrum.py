@@ -1,4 +1,5 @@
-"""Scenario Report Spectrum Analysis Module (Task 8.1).
+"""# Pre-lab (MOCK_MODE)
+Scenario Report Spectrum Analysis Module (Task 8.1).
 
 Provides FFT and Welch Power Spectral Density (PSD) analysis on MetaState time series
 data extracted from Task 7.2 Scenario Reports.
@@ -9,10 +10,10 @@ Public API:
     - :data:`MIN_SPECTRUM_SAMPLES`
     - :data:`MIN_FIT_POINTS`
     - :data:`TARGET_SLOPE_RANGE`
-    - :func:`load_and_validate_scenario_report`
+    - :func:`load_and_validate_scenario_report` (DEPRECATED: see REPORTING_RECONCILIATION.md)
     - :func:`resample_uniform`
     - :func:`compute_dimension_spectrum`
-    - :func:`analyze_spectrum`
+    - :func:`analyze_spectrum` (DEPRECATED: see REPORTING_RECONCILIATION.md)
     - :func:`write_analysis_json`
     - :func:`plot_psd`
 """
@@ -45,6 +46,8 @@ class SpectrumAnalysisError(ValueError):
 
 def load_and_validate_scenario_report(report_path: Path | str) -> dict[str, Any]:
     """Load and strictly validate a Task 7.2 scenario report JSON file.
+
+    DEPRECATED: Pre-lab scenario report loader. See REPORTING_RECONCILIATION.md.
 
     Args:
         report_path: File path to scenario report JSON.
@@ -284,6 +287,8 @@ def compute_dimension_spectrum(
 
 def analyze_spectrum(report_path: Path | str) -> tuple[dict[str, Any], dict[str, Any]]:
     """Perform complete spectrum analysis on a scenario report file.
+
+    DEPRECATED: Pre-lab scenario spectrum analysis. See REPORTING_RECONCILIATION.md.
 
     Args:
         report_path: Path to Task 7.2 scenario report JSON.

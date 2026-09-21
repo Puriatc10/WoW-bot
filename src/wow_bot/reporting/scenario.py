@@ -1,4 +1,5 @@
-"""Scenario execution reporting and passive instrumentation (Task 7.2).
+"""# Pre-lab (MOCK_MODE)
+Scenario execution reporting and passive instrumentation (Task 7.2).
 
 Provides structured metrics collection, report schema validation, and atomic JSON
 report serialization for research scenario execution.
@@ -6,8 +7,8 @@ report serialization for research scenario execution.
 Public API:
     - :data:`SCENARIO_REPORT_SCHEMA_VERSION`
     - :data:`META_STATE_DIMENSIONS`
-    - :class:`PipelineObserver`
-    - :class:`ScenarioReportCollector`
+    - :class:`PipelineObserver` (DEPRECATED: see REPORTING_RECONCILIATION.md)
+    - :class:`ScenarioReportCollector` (DEPRECATED: see REPORTING_RECONCILIATION.md)
     - :func:`validate_report_dict`
     - :func:`write_report_atomically`
 """
@@ -39,7 +40,10 @@ META_STATE_DIMENSIONS: tuple[str, ...] = (
 
 @runtime_checkable
 class PipelineObserver(Protocol):
-    """Protocol for passive runtime pipeline instrumentation."""
+    """Protocol for passive runtime pipeline instrumentation.
+
+    DEPRECATED: Pre-lab scenario observer protocol. See REPORTING_RECONCILIATION.md.
+    """
 
     def on_game_state(self, game_state: GameState) -> None: ...
     def on_meta_state(self, meta_state: MetaState) -> None: ...
@@ -57,7 +61,10 @@ class PipelineObserver(Protocol):
 
 @dataclass
 class ScenarioReportCollector:
-    """Passively collects pipeline execution events and constructs scenario research reports."""
+    """Passively collects pipeline execution events and constructs scenario research reports.
+
+    DEPRECATED: Pre-lab in-memory event collector. See REPORTING_RECONCILIATION.md.
+    """
 
     scenario: str
     seed: int

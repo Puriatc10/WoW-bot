@@ -1,4 +1,5 @@
-"""MetaState Generator module (Task 3.5).
+"""# Pre-lab (MOCK_MODE)
+MetaState Generator module (Task 3.5).
 
 Coordinates the Internal Dynamics subsystem components for each simulation step:
   1. LorenzAttractor (chaos)
