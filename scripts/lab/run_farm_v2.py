@@ -131,7 +131,7 @@ def main(args: list[str] | None = None) -> int:
     """CLI entry point for running farm loop."""
     parsed = parse_args(args)
 
-    sess_root = Path("runs/lab")
+    sess_root = Path("/tmp/runs/lab")
     sess_root.mkdir(parents=True, exist_ok=True)
 
     config_obj = Config(
