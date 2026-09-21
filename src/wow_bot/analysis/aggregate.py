@@ -16,9 +16,9 @@ import math
 import os
 from collections.abc import Sequence
 from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from wow_bot.analysis.lab_soak_v2 import SoakReport, validate_soak_report_dict
 from wow_bot.reporting.schema_v2 import validate_report_dict
@@ -26,12 +26,16 @@ from wow_bot.reporting.schema_v2 import validate_report_dict
 AGGREGATE_SCHEMA_VERSION: int = 1
 
 NON_CLAIMS: tuple[str, ...] = (
-    "We do NOT claim the agent farmed successfully in a real"
-    " game. Perception was mocked; outcomes were not observed.",
+    (
+        "We do NOT claim the agent farmed successfully in a real"
+        " game. Perception was mocked; outcomes were not observed."
+    ),
     "We do NOT claim anti-cheat evasion.",
     "We do NOT claim humanizer timing would evade detection.",
-    "We do NOT claim 24-hour stability. Only 1 hour was"
-    " measured in Phase 12.",
+    (
+        "We do NOT claim 24-hour stability. Only 1 hour was"
+        " measured in Phase 12."
+    ),
 )
 
 
@@ -41,12 +45,12 @@ class AggregateError(Exception):
 
 def _utc_now_iso() -> str:
     """Return current UTC time in ISO 8601 format."""
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _check_non_negative_int(val: Any, name: str) -> None:
     if isinstance(val, bool) or not isinstance(val, int):
-        raise ValueError(f"{name} must be an int, got {val!r}")
+        raise TypeError(f"{name} must be an int, got {val!r}")
     if val < 0:
         raise ValueError(f"{name} must be >= 0, got {val}")
 
@@ -54,7 +58,7 @@ def _check_non_negative_int(val: Any, name: str) -> None:
 def _check_optional_non_negative_float(val: Any, name: str) -> None:
     if val is not None:
         if isinstance(val, bool) or not isinstance(val, (int, float)):
-            raise ValueError(f"{name} must be a float or None, got {val!r}")
+            raise TypeError(f"{name} must be a float or None, got {val!r}")
         if not math.isfinite(float(val)) or float(val) < 0.0:
             raise ValueError(f"{name} must be a finite float >= 0.0, got {val}")
 
@@ -81,15 +85,15 @@ class AggregateConfig:
             )
 
         if not isinstance(self.require_report_v2, bool):
-            raise ValueError(f"require_report_v2 must be a bool, got {type(self.require_report_v2).__name__}")
+            raise TypeError(f"require_report_v2 must be a bool, got {type(self.require_report_v2).__name__}")
 
         if not isinstance(self.require_soak_report, bool):
-            raise ValueError(
+            raise TypeError(
                 f"require_soak_report must be a bool, got {type(self.require_soak_report).__name__}"
             )
 
         if not isinstance(self.include_non_claims, bool):
-            raise ValueError(f"include_non_claims must be a bool, got {type(self.include_non_claims).__name__}")
+            raise TypeError(f"include_non_claims must be a bool, got {type(self.include_non_claims).__name__}")
 
 
 @dataclass(frozen=True)
@@ -198,7 +202,7 @@ class InternalCounters:
             val = getattr(self, name)
             if val is not None:
                 if isinstance(val, bool) or not isinstance(val, (int, float)):
-                    raise ValueError(f"{name} must be a float or None, got {val!r}")
+                    raise TypeError(f"{name} must be a float or None, got {val!r}")
                 f_val = float(val)
                 if not (0.0 <= f_val <= 1.0):
                     raise ValueError(f"{name} must be in [0.0, 1.0], got {f_val}")
@@ -227,15 +231,15 @@ class SessionSource:
             raise ValueError(f"session_dir must be a non-empty string, got {self.session_dir!r}")
 
         if not isinstance(self.has_report_v2, bool):
-            raise ValueError(f"has_report_v2 must be a bool, got {type(self.has_report_v2).__name__}")
+            raise TypeError(f"has_report_v2 must be a bool, got {type(self.has_report_v2).__name__}")
         if not isinstance(self.has_soak_report, bool):
-            raise ValueError(f"has_soak_report must be a bool, got {type(self.has_soak_report).__name__}")
+            raise TypeError(f"has_soak_report must be a bool, got {type(self.has_soak_report).__name__}")
 
         if self.report_schema_version is not None:
             if isinstance(self.report_schema_version, bool) or not isinstance(
                 self.report_schema_version, int
             ):
-                raise ValueError(
+                raise TypeError(
                     f"report_schema_version must be an int >= 1 or None, got {self.report_schema_version!r}"
                 )
             if self.report_schema_version < 1:
@@ -245,7 +249,7 @@ class SessionSource:
             if isinstance(self.soak_schema_version, bool) or not isinstance(
                 self.soak_schema_version, int
             ):
-                raise ValueError(
+                raise TypeError(
                     f"soak_schema_version must be an int >= 1 or None, got {self.soak_schema_version!r}"
                 )
             if self.soak_schema_version < 1:
@@ -275,7 +279,7 @@ class AggregateReport:
             raise ValueError(f"generated_at must be a non-empty string, got {self.generated_at!r}")
 
         if not isinstance(self.session_ids, tuple):
-            raise ValueError(f"session_ids must be a tuple, got {type(self.session_ids).__name__}")
+            raise TypeError(f"session_ids must be a tuple, got {type(self.session_ids).__name__}")
         for s in self.session_ids:
             if not isinstance(s, str) or not s:
                 raise ValueError("session_ids elements must be non-empty strings")
@@ -289,32 +293,32 @@ class AggregateReport:
             )
 
         if not isinstance(self.perception_agnostic, PerceptionAgnosticMetrics):
-            raise ValueError(
+            raise TypeError(
                 f"perception_agnostic must be a PerceptionAgnosticMetrics instance, got {type(self.perception_agnostic).__name__}"
             )
 
         if not isinstance(self.internal_counters_not_research_findings, InternalCounters):
-            raise ValueError(
+            raise TypeError(
                 f"internal_counters_not_research_findings must be an InternalCounters instance, got {type(self.internal_counters_not_research_findings).__name__}"
             )
 
         if not isinstance(self.session_sources, tuple):
-            raise ValueError(
+            raise TypeError(
                 f"session_sources must be a tuple, got {type(self.session_sources).__name__}"
             )
         for src in self.session_sources:
             if not isinstance(src, SessionSource):
-                raise ValueError("session_sources elements must be SessionSource instances")
+                raise TypeError("session_sources elements must be SessionSource instances")
 
         if not isinstance(self.non_claims, tuple):
-            raise ValueError(f"non_claims must be a tuple, got {type(self.non_claims).__name__}")
+            raise TypeError(f"non_claims must be a tuple, got {type(self.non_claims).__name__}")
         for claim in self.non_claims:
             if not isinstance(claim, str):
-                raise ValueError("non_claims elements must be strings")
+                raise TypeError("non_claims elements must be strings")
 
     def to_json(self) -> dict[str, Any]:
         """Convert AggregateReport to a JSON-serializable dictionary."""
-        return {
+        out: dict[str, Any] = {
             "schema_version": self.schema_version,
             "generated_at": self.generated_at,
             "session_ids": list(self.session_ids),
@@ -326,6 +330,7 @@ class AggregateReport:
             "session_sources": [asdict(s) for s in self.session_sources],
             "non_claims": list(self.non_claims),
         }
+        return out
 
 
 def load_soak_report(path: Path) -> SoakReport:
@@ -393,7 +398,7 @@ def load_report_v2(path: Path) -> dict[str, Any]:
     except Exception as exc:
         raise AggregateError(f"Report v2 validation failed for {p}: {exc}") from exc
 
-    return data
+    return cast(dict[str, Any], data)
 
 
 def aggregate_sessions(
@@ -670,7 +675,7 @@ def aggregate_sessions(
 
     non_claims = NON_CLAIMS if config.include_non_claims else ()
 
-    sorted_session_ids = tuple(sorted(set(src.session_id for src in session_sources)))
+    sorted_session_ids = tuple(sorted({src.session_id for src in session_sources}))
 
     return AggregateReport(
         schema_version=AGGREGATE_SCHEMA_VERSION,

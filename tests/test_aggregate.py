@@ -483,7 +483,7 @@ def test_write_aggregate_atomic_and_creates_parents(tmp_path: Path) -> None:
     assert not (output_path.parent / "agg.json.tmp").exists()
 
     content = output_path.read_text(encoding="utf-8")
-    assert content.startswith("{\n  \"generated_at\":") or content.startswith("{\n  \"")
+    assert content.startswith(("{\n  \"generated_at\":", "{\n  \""))
     parsed = json.loads(content)
     assert parsed["schema_version"] == 1
 
@@ -598,12 +598,14 @@ def test_static_ast_inspection() -> None:
                     assert sub not in mod, f"Forbidden import from found in aggregate.py: {mod}"
 
         # Direct call checks to time.monotonic, time.time, time.perf_counter
-        elif isinstance(node, ast.Call):
-            func = node.func
-            if isinstance(func, ast.Attribute):
-                if isinstance(func.value, ast.Name) and func.value.id == "time":
-                    assert func.attr not in (
-                        "monotonic",
-                        "time",
-                        "perf_counter",
-                    ), f"Forbidden time call found in aggregate.py: time.{func.attr}"
+        elif (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and isinstance(node.func.value, ast.Name)
+            and node.func.value.id == "time"
+        ):
+            assert node.func.attr not in (
+                "monotonic",
+                "time",
+                "perf_counter",
+            ), f"Forbidden time call found in aggregate.py: time.{node.func.attr}"
