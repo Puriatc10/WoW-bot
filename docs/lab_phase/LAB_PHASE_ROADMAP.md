@@ -1135,6 +1135,8 @@ recovery.
 - Spectral analysis on lab data runs.
 - Soak 24 h without crash.
 
+### T10.0 — Reporting & Analysis Reconciliation
+
 ### T10.1 — Report Schema v2
 
 **Depends on:** Phases 6-9

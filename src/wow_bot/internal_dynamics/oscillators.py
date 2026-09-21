@@ -1,4 +1,5 @@
-"""Coupled oscillator bank module (Task 3.2).
+"""# Pre-lab (MOCK_MODE)
+Coupled oscillator bank module (Task 3.2).
 
 Provides slow continuous temporal variation using deterministic coupled oscillators
 with five canonical incommensurable frequencies and amplitudes.

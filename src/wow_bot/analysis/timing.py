@@ -1,4 +1,5 @@
-"""Timing Distribution Analysis module (Task 8.2).
+"""# Pre-lab (MOCK_MODE)
+Timing Distribution Analysis module (Task 8.2).
 
 Provides conditional log-normal model validation using randomized Probability Integral
 Transform (PIT), Kolmogorov-Smirnov (KS) testing against Uniform(0,1), coefficient of
@@ -9,12 +10,12 @@ Public API:
     - :data:`MIN_TIMING_SAMPLES`
     - :data:`KS_ALPHA`
     - :data:`CV_THRESHOLD`
-    - :func:`load_timing_report`
-    - :func:`validate_timing_samples`
+    - :func:`load_timing_report` (DEPRECATED: see REPORTING_RECONCILIATION.md)
+    - :func:`validate_timing_samples` (DEPRECATED: see REPORTING_RECONCILIATION.md)
     - :func:`compute_descriptive_statistics`
     - :func:`compute_randomized_pit`
     - :func:`run_conditional_ks`
-    - :func:`build_timing_analysis`
+    - :func:`build_timing_analysis` (DEPRECATED: see REPORTING_RECONCILIATION.md)
     - :func:`plot_distribution`
     - :func:`write_analysis_output`
 """
@@ -53,6 +54,8 @@ UPPER_DELAY_MS: Final[float] = MAX_DELAY_MS
 def load_timing_report(report_path: str | Path) -> dict[str, Any]:
     """Load and perform basic validation on a Task 7.2 scenario report.
 
+    DEPRECATED: Pre-lab timing report loader. See REPORTING_RECONCILIATION.md.
+
     Args:
         report_path: Path to the JSON report file.
 
@@ -89,6 +92,8 @@ def validate_timing_samples(
     timing_dict: dict[str, Any],
 ) -> tuple[list[float], list[dict[str, Any]] | None]:
     """Validate and extract raw delays and detailed per-sample metadata.
+
+    DEPRECATED: Pre-lab timing sample validator. See REPORTING_RECONCILIATION.md.
 
     Args:
         timing_dict: "timing" section from scenario report dictionary.
@@ -303,6 +308,8 @@ def build_timing_analysis(
     min_samples: int = MIN_TIMING_SAMPLES,
 ) -> dict[str, Any]:
     """Perform timing distribution analysis on scenario report dict.
+
+    DEPRECATED: Pre-lab timing analysis builder. See REPORTING_RECONCILIATION.md.
 
     Args:
         report_dict: Task 7.2 Scenario Report dictionary.

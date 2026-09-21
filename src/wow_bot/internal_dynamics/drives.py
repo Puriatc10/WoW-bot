@@ -1,4 +1,5 @@
-"""Drives core module (Task 3.1).
+"""# Pre-lab (MOCK_MODE)
+Drives core module (Task 3.1).
 
 Manages the five internal physiological/psychological drive levels:
   - hunger
