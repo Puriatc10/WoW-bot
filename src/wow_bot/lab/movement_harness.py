@@ -1,3 +1,4 @@
+# Pre-lab (MOCK_MODE)
 """Movement harness for driving actuators through scenario waypoints."""
 
 import math

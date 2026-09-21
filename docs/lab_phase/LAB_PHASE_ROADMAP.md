@@ -1221,6 +1221,8 @@ recovery.
 - ≥50 successful cycles.
 - Stable resource usage.
 
+### T11.0 — Farm Reconciliation
+
 ### T11.1 — Farm Profile
 
 **Depends on:** Phase 9

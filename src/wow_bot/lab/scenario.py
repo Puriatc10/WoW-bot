@@ -1,3 +1,4 @@
+# Pre-lab (MOCK_MODE)
 """Scenario data structures and JSON loader for lab movement runs."""
 
 import json

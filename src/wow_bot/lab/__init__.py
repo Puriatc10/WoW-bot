@@ -1,3 +1,4 @@
+# Pre-lab (MOCK_MODE)
 """Lab execution mode package for WoW-bot."""
 
 from wow_bot.lab.movement_harness import HarnessResult, MovementHarness
