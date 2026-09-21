@@ -1,4 +1,6 @@
-"""Local asynchronous LLM client for Ollama's OpenAI-compatible API (Task 4.1).
+"""# Pre-lab (MOCK_MODE)
+
+Local asynchronous LLM client for Ollama's OpenAI-compatible API (Task 4.1).
 
 Provides an asynchronous client wrapper around ``openai.AsyncOpenAI`` with strict local-only
 endpoint validation, disabled environment-proxy resolution (``trust_env=False``), explicit
