@@ -77,10 +77,19 @@ class GameStateAdapter:
     def to_world_sync_view(self) -> WorldSyncView:
         """Project snapshot to WorldSyncView satisfying world.sync.GameStateLike.
 
-        Raises AdapterIncompleteError if position is missing from GameState.
+        Raises AdapterIncompleteError if position or the non-Optional player_z
+        cannot be supplied from GameState.
         """
         x, y = self._extract_required_coords("WorldSyncView")
-        z = float(getattr(self.snapshot, "player_z", 0.0))
+
+        z = getattr(self.snapshot, "player_z", None)
+        if z is None:
+            raise AdapterIncompleteError("WorldSyncView requires non-Optional player_z")
+        z = float(z)
+
+        # `entities` has no canonical channel: GameState exposes `enemies`, whose
+        # EnemyInfo shape is disjoint from EntityLike. An empty tuple is reported
+        # as "no entity observations available", never fabricated entity values.
         raw_entities = getattr(self.snapshot, "entities", ())
         entities: tuple[WorldSyncEntityView, ...] = tuple(raw_entities)
 
@@ -135,7 +144,10 @@ class GameStateAdapter:
         if lvl is None:
             raise AdapterIncompleteError("StrategistView requires non-Optional level_or_xp")
 
-        z = float(getattr(self.snapshot, "player_z", 0.0))
+        z = getattr(self.snapshot, "player_z", None)
+        if z is None:
+            raise AdapterIncompleteError("StrategistView requires non-Optional player_z")
+        z = float(z)
         target = getattr(self.snapshot, "target", None)
         target_id = str(target.name) if target and getattr(target, "name", None) else None
         target_hp = fraction_to_percent(getattr(target, "hp_pct", None)) if target else None
@@ -194,10 +206,10 @@ class GameStateAdapter:
         if raw_entities is not None:
             entities = tuple(raw_entities)
         else:
-            try:
-                entities = self.to_targeting_views()
-            except AdapterIncompleteError:
-                entities = ()
+            # No try/except here on purpose: if the targeting projection cannot
+            # supply entities, that structural mismatch must surface instead of
+            # being silently replaced with an empty tuple.
+            entities = self.to_targeting_views()
 
         target_id = str(target.name) if target and getattr(target, "name", None) else None
         target_x = getattr(self.snapshot, "target_x", None)

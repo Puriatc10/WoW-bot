@@ -1,7 +1,11 @@
 """Frozen data container views projecting canonical GameState into consumer shapes.
 
 These dataclasses structurally and type-wise satisfy the eight consumer Protocols
-without coupling to them via direct inheritance or imports.
+without coupling to them via direct inheritance. One type-only import is required
+and unavoidable: FSMState from wow_bot.executor.states, because the target
+Protocol strategist.prompts_v2.GameStateView declares fsm_state with that exact
+enum. The import is for typing only and couples no runtime behavior; no consumer
+Protocol is imported or inherited here.
 """
 
 from __future__ import annotations

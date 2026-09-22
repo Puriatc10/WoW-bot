@@ -650,3 +650,54 @@ def test_perception_backend_abc() -> None:
 
     backend = ConcreteBackend()
     assert isinstance(backend, PerceptionBackend)
+
+
+# ---------------------------------------------------------------------------
+# 9. End-to-End Projection From a Canonical GameState
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "A strictly canonical GameState cannot supply several fields that the "
+        "consumer Protocols declare non-Optional (player_z, resource_max, "
+        "inventory_count, level_or_xp, target_in_range, gcd_ready, adds_count, "
+        "target_is_alive, target_is_lootable, threat, is_attackable, is_alive, "
+        "is_in_combat_with_self). Every projection therefore raises "
+        "AdapterIncompleteError. See ADR-001, section 'The adapter cannot "
+        "produce a successful projection today'. Remove this xfail once "
+        "GameState is extended or a supplementary data channel exists, without "
+        "which T-FIX-04 (MockPerceptionAdapter) has nothing to project."
+    ),
+)
+def test_canonical_game_state_end_to_end_projection() -> None:
+    """Every projection must succeed end-to-end starting from a canonical GameState.
+
+    The fixture below uses only fields defined in ``wow_bot.shared.interfaces``:
+    no extra attributes, no fakes, no monkeypatched attributes. It carries a
+    target, matching the shape ``MockPerception`` emits during combat.
+    """
+    state = GameState(
+        timestamp=1000.0,
+        hp_pct=0.85,
+        mana_pct=0.60,
+        position=(100.0, 200.0),
+        facing=1.57,
+        in_combat=True,
+        target=TargetInfo(
+            name="TargetMob", hp_pct=0.50, reaction="hostile", distance_estimate=10.0
+        ),
+        enemies=[],
+        events=[],
+    )
+    adapter = GameStateAdapter(state)
+
+    assert isinstance(adapter.to_world_sync_view(), WorldSyncView)
+    assert isinstance(adapter.to_strategist_view(fsm_state="IDLE"), StrategistView)
+    assert isinstance(adapter.to_combat_view(), CombatView)
+    assert len(adapter.to_targeting_views()) == 1
+    assert isinstance(adapter.to_reactive_view(), ReactiveView)
+    assert isinstance(adapter.to_flee_view(), FleeView)
+    assert isinstance(adapter.to_loot_view(), LootView)
+    assert isinstance(adapter.to_vendor_view(), VendorView)
