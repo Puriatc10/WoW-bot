@@ -22,6 +22,7 @@ except ImportError:
 
 from scripts.lab.full_soak import (
     ProcessResourceSampler,
+    _FakeLlmClient,
     _load_rotation,
     main,
     make_soak_sleep,
@@ -144,7 +145,7 @@ def test_files(tmp_path: Path) -> tuple[Path, Path, Path, Path]:
         'server_allowlist = ["127.0.0.1:8080"]\n'
         'isolation_sentinel = "127.0.0.1:9999"\n'
         'kill_switch_key = "F12"\n'
-        f'session_root = "{tmp_path}"\n'
+        f'session_root = "{tmp_path.as_posix()}"\n'
         'dry_run = true\n'
         'max_session_seconds = 3600\n'
         'log_level = "INFO"\n',
@@ -438,6 +439,7 @@ async def test_run_soak_async_smoke_run(
     - summary.sample_count equals len(samples)
     - returns LabRunResult with status in {STOP_EVENT_SET, MAX_CYCLES_REACHED}
     - runner does NOT start Reflex loop or Watchdog
+    - the CLI's scripted LLM response is accepted by the real vocabulary guard
     """
     cfg, prof, rot, db = test_files
     sess_dir = tmp_path / "soak_session"
@@ -475,7 +477,7 @@ async def test_run_soak_async_smoke_run(
         sampler=sampler,
         game_state_source=game_state_source,
         meta_state_source=lambda: meta_inst,
-        llm_client=FakeLlmClient(),
+        llm_client=_FakeLlmClient(),
     )
 
     elapsed_cpu = time.process_time() - start_cpu
@@ -491,6 +493,14 @@ async def test_run_soak_async_smoke_run(
     validate_soak_report_dict(report_data)
 
     assert res.status in {LabRunStatus.STOP_EVENT_SET, LabRunStatus.MAX_CYCLES_REACHED}
+
+    events = [
+        json.loads(line)
+        for line in (sess_dir / "events.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    assert any(event["event"] == "strategist_success" for event in events)
+    assert any(event["event"] == "vocab_accepted" for event in events)
+    assert not any(event["event"] == "vocab_rejected" for event in events)
 
 
 @pytest.mark.asyncio

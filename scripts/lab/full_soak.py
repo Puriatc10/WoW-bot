@@ -90,7 +90,7 @@ class _FakeLlmClient:
 
     def complete(self, prompt: str) -> str:
         """Return valid JSON strategy response for mock strategist calls."""
-        return '{"goal": "farm", "target": null, "rationale": "mock soak run"}'
+        return '{"goal": "explore", "target": null, "rationale": "mock soak run"}'
 
 
 @dataclass

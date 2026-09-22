@@ -143,6 +143,23 @@ mode. No task may bypass it. The following calls are mandatory:
 
 ## 5. Task Workflow
 
+### Review-specific exception: Pre-Phase-13 readiness
+
+The user-authorized Pre-Phase-13 review may audit across roadmap tasks,
+write `docs/reviews/PRE_PHASE_13_REVIEW.md`, fix failing tests without
+weakening acceptance, and fix demonstrated readiness blockers in lab
+modules. For this review only, the single-task and declared-file scope
+rules in sections 5.1 and 5.2 do not apply. No roadmap task is added,
+reordered, or declared complete. Unresolved failures in frozen modules
+are documented rather than treated as permission to change them.
+
+All pre-lab modules remain frozen under Strategy A. Do not change the
+GameState schema, SafetyLayer, Session, Config, NON_CLAIMS wording,
+T12.0 reporting split, SOAK_PROTOCOL.md, RESULTS.md, or the lab roadmap.
+Do not rewrite T12.2 or T12.3. Real perception and live actuation remain
+outside this review. Section 5.4 still applies to implementation work;
+existing failures may be investigated and reported within this review.
+
 ### 5.1 Source of Tasks
 
 Tasks are defined exclusively in `LAB_PHASE_ROADMAP.md`. Do not invent
