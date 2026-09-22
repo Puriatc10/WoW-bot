@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import ast
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Mapping
 
 import pytest
 
@@ -409,9 +409,12 @@ def test_static_ast_forbidden_imports_and_time_calls() -> None:
                 assert sub not in mod_name.lower(), f"Forbidden substring in import from: {mod_name}"
 
         # Call checks for time functions
-        elif isinstance(node, ast.Call):
-            if isinstance(node.func, ast.Attribute):
-                if isinstance(node.func.value, ast.Name) and node.func.value.id == "time":
-                    assert node.func.attr not in forbidden_time_funcs, (
-                        f"Forbidden time call found: time.{node.func.attr}"
-                    )
+        elif (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and isinstance(node.func.value, ast.Name)
+            and node.func.value.id == "time"
+        ):
+            assert node.func.attr not in forbidden_time_funcs, (
+                f"Forbidden time call found: time.{node.func.attr}"
+            )

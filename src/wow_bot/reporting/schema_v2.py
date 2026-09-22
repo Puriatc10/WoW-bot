@@ -52,14 +52,14 @@ _VALID_REJECTION_REASONS: frozenset[str] = frozenset(r.value for r in RejectionR
 
 def _check_non_negative_int(val: Any, name: str) -> None:
     if isinstance(val, bool) or not isinstance(val, int):
-        raise ValueError(f"{name} must be an int, got {val!r}")
+        raise TypeError(f"{name} must be an int, got {val!r}")
     if val < 0:
         raise ValueError(f"{name} must be >= 0, got {val}")
 
 
 def _check_non_negative_float(val: Any, name: str) -> None:
     if isinstance(val, bool) or not isinstance(val, (int, float)):
-        raise ValueError(f"{name} must be a float or int, got {val!r}")
+        raise TypeError(f"{name} must be a float or int, got {val!r}")
     if float(val) < 0.0:
         raise ValueError(f"{name} must be >= 0.0, got {val}")
 
@@ -71,7 +71,7 @@ def _check_optional_non_negative_float(val: Any, name: str) -> None:
 
 def _parse_iso_8601(ts: str, name: str) -> datetime:
     if not isinstance(ts, str):
-        raise ValueError(f"{name} must be an ISO 8601 string, got {ts!r}")
+        raise TypeError(f"{name} must be an ISO 8601 string, got {ts!r}")
     try:
         if ts.endswith("Z"):
             ts_iso = ts[:-1] + "+00:00"
@@ -111,7 +111,7 @@ class MetaSection:
             raise ValueError("stop_reason must be a string or None")
 
         if not isinstance(self.config_snapshot, dict):
-            raise ValueError("config_snapshot must be a dict")
+            raise TypeError("config_snapshot must be a dict")
 
         _check_non_negative_int(self.event_count, "event_count")
 
@@ -139,10 +139,10 @@ class PerceptionSection:
                 raise ValueError(f"confidence_mean must be in [0.0, 1.0], got {val}")
 
         if not isinstance(self.known_fields, tuple):
-            raise ValueError("known_fields must be a tuple")
+            raise TypeError("known_fields must be a tuple")
         for f in self.known_fields:
             if not isinstance(f, str):
-                raise ValueError("known_fields elements must be strings")
+                raise TypeError("known_fields elements must be strings")
         if list(self.known_fields) != sorted(set(self.known_fields)):
             raise ValueError("known_fields must be sorted and unique")
 
@@ -171,7 +171,7 @@ class ActionSection:
         _check_optional_non_negative_float(self.latency_ms_max, "latency_ms_max")
 
         if not isinstance(self.status_counts, Mapping):
-            raise ValueError("status_counts must be a Mapping")
+            raise TypeError("status_counts must be a Mapping")
         for k, v in self.status_counts.items():
             if k not in {"success", "failed", "timeout"}:
                 raise ValueError(
@@ -199,10 +199,10 @@ class ReflexSection:
         _check_non_negative_int(self.source_error_count, "source_error_count")
 
         if not isinstance(self.signal_counts, Mapping):
-            raise ValueError("signal_counts must be a Mapping")
+            raise TypeError("signal_counts must be a Mapping")
         for k, v in self.signal_counts.items():
             if not isinstance(k, str):
-                raise ValueError(f"signal_counts key must be a string, got {k!r}")
+                raise TypeError(f"signal_counts key must be a string, got {k!r}")
             _check_non_negative_int(v, f"signal_counts[{k!r}]")
 
 
@@ -289,7 +289,7 @@ class HumanizerSection:
         _check_non_negative_int(self.action_count, "action_count")
 
         if not isinstance(self.interval_samples_ms, tuple):
-            raise ValueError("interval_samples_ms must be a tuple")
+            raise TypeError("interval_samples_ms must be a tuple")
         for sample in self.interval_samples_ms:
             _check_non_negative_float(sample, "interval_samples_ms element")
 
@@ -298,7 +298,7 @@ class HumanizerSection:
         _check_non_negative_int(self.miss_click_count, "miss_click_count")
 
         if not isinstance(self.config_snapshot, dict):
-            raise ValueError("config_snapshot must be a dict")
+            raise TypeError("config_snapshot must be a dict")
 
 
 @dataclass(frozen=True)
@@ -326,10 +326,10 @@ class StrategistSection:
         _check_non_negative_int(self.prompt_hash_count, "prompt_hash_count")
 
         if not isinstance(self.unique_prompt_hashes, tuple):
-            raise ValueError("unique_prompt_hashes must be a tuple")
+            raise TypeError("unique_prompt_hashes must be a tuple")
         for h in self.unique_prompt_hashes:
             if not isinstance(h, str):
-                raise ValueError("unique_prompt_hashes elements must be strings")
+                raise TypeError("unique_prompt_hashes elements must be strings")
         if list(self.unique_prompt_hashes) != sorted(set(self.unique_prompt_hashes)):
             raise ValueError("unique_prompt_hashes must be sorted and unique")
 
@@ -337,7 +337,7 @@ class StrategistSection:
         _check_optional_non_negative_float(self.latency_ms_p95, "latency_ms_p95")
 
         if not isinstance(self.goal_counts, Mapping):
-            raise ValueError("goal_counts must be a Mapping")
+            raise TypeError("goal_counts must be a Mapping")
         allowed_goals_set = set(ALLOWED_GOALS)
         for k, v in self.goal_counts.items():
             if k not in allowed_goals_set:
@@ -345,7 +345,7 @@ class StrategistSection:
             _check_non_negative_int(v, f"goal_counts[{k!r}]")
 
         if not isinstance(self.rejection_reason_counts, Mapping):
-            raise ValueError("rejection_reason_counts must be a Mapping")
+            raise TypeError("rejection_reason_counts must be a Mapping")
         for k, v in self.rejection_reason_counts.items():
             if k not in _VALID_REJECTION_REASONS:
                 raise ValueError(
@@ -373,10 +373,10 @@ class WatchdogSection:
             )
 
         if not isinstance(self.transition_timeline, tuple):
-            raise ValueError("transition_timeline must be a tuple")
+            raise TypeError("transition_timeline must be a tuple")
         for entry in self.transition_timeline:
             if not isinstance(entry, Mapping):
-                raise ValueError("transition_timeline entry must be a Mapping")
+                raise TypeError("transition_timeline entry must be a Mapping")
             if set(entry.keys()) != {"ts", "from", "to", "reason"}:
                 raise ValueError(
                     f"transition_timeline entry keys must be exactly "
@@ -384,14 +384,14 @@ class WatchdogSection:
                 )
             for k, v in entry.items():
                 if not isinstance(v, str):
-                    raise ValueError(
+                    raise TypeError(
                         f"transition_timeline entry[{k!r}] must be a string, got {v!r}"
                     )
 
         _check_non_negative_int(self.loop_detected_count, "loop_detected_count")
 
         if not isinstance(self.shutdown_requested, bool):
-            raise ValueError("shutdown_requested must be a bool")
+            raise TypeError("shutdown_requested must be a bool")
 
         if self.shutdown_exit_code is not None:
             if isinstance(self.shutdown_exit_code, bool) or not isinstance(
@@ -457,7 +457,7 @@ class ReportV2:
                 f"schema_version must equal {SCHEMA_VERSION}, got {self.schema_version}"
             )
         if not isinstance(self.meta, MetaSection):
-            raise ValueError("meta must be a MetaSection")
+            raise TypeError("meta must be a MetaSection")
 
     def to_json(self) -> dict[str, Any]:
         """Return a JSON-serializable dict representation of the report."""

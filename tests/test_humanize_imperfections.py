@@ -74,11 +74,11 @@ def test_config_max_pause_redraws_invalid() -> None:
 
 
 def test_config_non_finite_float() -> None:
-    with pytest.raises(ValueError, match="pause_probability"):
+    with pytest.raises(TypeError, match="pause_probability"):
         ImperfectionConfig(pause_probability=float("nan"))
-    with pytest.raises(ValueError, match="pause_duration_mu"):
+    with pytest.raises(TypeError, match="pause_duration_mu"):
         ImperfectionConfig(pause_duration_mu=float("inf"))
-    with pytest.raises(ValueError, match="miss_click_max_offset_units"):
+    with pytest.raises(TypeError, match="miss_click_max_offset_units"):
         ImperfectionConfig(miss_click_max_offset_units=float("-inf"))
 
 
@@ -110,7 +110,7 @@ def test_pause_decision_invariants() -> None:
         )
 
     # empty reason
-    with pytest.raises(ValueError, match="non-empty string"):
+    with pytest.raises(TypeError, match="non-empty string"):
         PauseDecision(occurred=False, duration_s=0.0, reason="")
 
 
@@ -150,7 +150,7 @@ def test_miss_click_decision_invariants() -> None:
         )
 
     # empty reason
-    with pytest.raises(ValueError, match="non-empty string"):
+    with pytest.raises(TypeError, match="non-empty string"):
         MissClickDecision(
             occurred=False, offset_x=0.0, offset_y=0.0, magnitude=0.0, reason=""
         )

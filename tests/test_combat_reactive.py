@@ -3,8 +3,9 @@ Tests for reactive combat (T6.4).
 """
 
 import ast
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any
 
 import pytest
 
@@ -15,13 +16,11 @@ from wow_bot.combat.reactive import (
     ReactiveCombat,
     ReactiveCombatBehavior,
     ReactiveCombatConfig,
-    ReactiveCombatError,
     ReactiveCombatSource,
     ReactiveDecision,
     ReactiveStateView,
 )
 from wow_bot.executor.states import FSMState
-from wow_bot.reflex.signals import Signal
 
 
 @dataclass(frozen=True)
@@ -550,17 +549,6 @@ def test_static_ast_prohibited_imports() -> None:
     ]
     forbidden_substrings = ["ollama", "openai", "anthropic", "llm"]
 
-    allowed_combat_modules = {
-        "wow_bot.combat.rotation",
-        "wow_bot.combat.targeting",
-        "wow_bot.combat.loop",
-        "wow_bot.reflex.signals",
-        "wow_bot.reflex.controls",
-        "wow_bot.executor.fsm_v2",
-        "wow_bot.executor.states",
-        "wow_bot.actuation.mapper",
-    }
-
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
@@ -608,7 +596,11 @@ def test_static_ast_decide_no_rng_or_now_access() -> None:
     assert decide_node is not None, "ReactiveCombatBehavior.decide method not found"
 
     for child in ast.walk(decide_node):
-        if isinstance(child, ast.Attribute):
-            if isinstance(child.value, ast.Name):
-                if child.value.id in ("rng", "now"):
-                    pytest.fail(f"Attribute access '{child.attr}' on parameter '{child.value.id}' in decide()")
+        if (
+            isinstance(child, ast.Attribute)
+            and isinstance(child.value, ast.Name)
+            and child.value.id in ("rng", "now")
+        ):
+            pytest.fail(
+                f"Attribute access '{child.attr}' on parameter '{child.value.id}' in decide()"
+            )

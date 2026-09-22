@@ -6,21 +6,18 @@ import ast
 import inspect
 import subprocess
 import sys
-import time
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
-
-import pytest
 
 import wow_bot.watchdog as wd_pkg
 import wow_bot.watchdog.health as health_module
 import wow_bot.watchdog.shutdown as shutdown_module
 import wow_bot.watchdog.watchdog as watchdog_module
 from wow_bot.watchdog.health import HealthState
-from wow_bot.watchdog.shutdown import GracefulShutdown, ShutdownReason
+from wow_bot.watchdog.shutdown import ShutdownReason
 from wow_bot.watchdog.watchdog import (
-    WatchdogProcess,
     _WATCHDOG_TO_SHUTDOWN_REASON,
+    WatchdogProcess,
 )
 
 
@@ -40,7 +37,7 @@ def test_health_state_single_definition_ast() -> None:
 
 def test_watchdog_imports_health_state_from_health() -> None:
     """Verify watchdog.py imports HealthState from health.py."""
-    assert getattr(watchdog_module, "HealthState") is health_module.HealthState
+    assert watchdog_module.HealthState is health_module.HealthState
 
 
 def test_init_reexports_health_state_from_health() -> None:

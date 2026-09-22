@@ -7,7 +7,6 @@ import json
 from dataclasses import fields
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any
 
 import pytest
 
@@ -34,8 +33,6 @@ from wow_bot.reporting.schema_v2 import (
     section_names,
     validate_report_dict,
 )
-from wow_bot.strategist.prompts_v2 import ALLOWED_GOALS
-from wow_bot.strategist.vocab_v2 import RejectionReason
 
 
 def _make_valid_meta() -> MetaSection:
@@ -247,7 +244,7 @@ def test_meta_section_validations() -> None:
         )
 
     # non-dict config_snapshot
-    with pytest.raises(ValueError, match="config_snapshot must be a dict"):
+    with pytest.raises(TypeError, match="config_snapshot must be a dict"):
         MetaSection(
             session_id="s1",
             mode="MOCK",
@@ -711,24 +708,25 @@ def test_static_ast_isolation() -> None:
                     assert not alias.name.startswith(forbidden), (
                         f"Forbidden import found: {alias.name}"
                     )
-        elif isinstance(node, ast.ImportFrom):
-            if node.module:
-                full_mod = node.module
-                allowed_exception = full_mod in (
-                    "wow_bot.strategist.prompts_v2",
-                    "wow_bot.strategist.vocab_v2",
-                )
-                if not allowed_exception:
-                    for forbidden in forbidden_modules:
-                        assert not full_mod.startswith(forbidden), (
-                            f"Forbidden from-import found: {full_mod}"
-                        )
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            full_mod = node.module
+            allowed_exception = full_mod in (
+                "wow_bot.strategist.prompts_v2",
+                "wow_bot.strategist.vocab_v2",
+            )
+            if not allowed_exception:
+                for forbidden in forbidden_modules:
+                    assert not full_mod.startswith(forbidden), (
+                        f"Forbidden from-import found: {full_mod}"
+                    )
 
         # Check that time calls are not made
-        if isinstance(node, ast.Call):
-            if isinstance(node.func, ast.Attribute):
-                if node.func.attr in ("monotonic", "time", "perf_counter"):
-                    raise AssertionError(f"Call to time.{node.func.attr} found!")
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr in ("monotonic", "time", "perf_counter")
+        ):
+            raise AssertionError(f"Call to time.{node.func.attr} found!")
 
 
 def test_static_ast_no_prelab_touched() -> None:

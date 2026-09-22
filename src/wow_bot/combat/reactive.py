@@ -131,9 +131,10 @@ class ReactiveDecision:
                     f"action == {self.action.value} implies spell_id is not None and intent is not None"
                 )
 
-        elif self.action == ReactiveAction.RETREAT:
-            if self.spell_id is not None or self.intent is None:
-                raise ValueError("action == RETREAT implies spell_id is None and intent is not None")
+        elif self.action == ReactiveAction.RETREAT and (
+            self.spell_id is not None or self.intent is None
+        ):
+            raise ValueError("action == RETREAT implies spell_id is None and intent is not None")
 
 
 class ReactiveCombat:
@@ -163,18 +164,20 @@ class ReactiveCombat:
             )
 
         # 2. RETREAT
-        if state.self_hp_percent <= cfg.defensive_hp_threshold:
-            if state.spell_cooldown_ready(cfg.defensive_spell_id):
-                intent = MoveTo(
-                    x=state.self_x - cfg.retreat_distance_units,
-                    y=state.self_y,
-                )
-                return ReactiveDecision(
-                    action=ReactiveAction.RETREAT,
-                    spell_id=None,
-                    intent=intent,
-                    reason="low_hp_retreat",
-                )
+        if (
+            state.self_hp_percent <= cfg.defensive_hp_threshold
+            and state.spell_cooldown_ready(cfg.defensive_spell_id)
+        ):
+            intent = MoveTo(
+                x=state.self_x - cfg.retreat_distance_units,
+                y=state.self_y,
+            )
+            return ReactiveDecision(
+                action=ReactiveAction.RETREAT,
+                spell_id=None,
+                intent=intent,
+                reason="low_hp_retreat",
+            )
 
         # 3. INTERRUPT
         if state.spell_cooldown_ready(cfg.interrupt_spell_id):
@@ -195,19 +198,19 @@ class ReactiveCombat:
 
         # 4. DEFENSIVE
         if state.self_hp_percent <= cfg.defensive_hp_threshold:
-            if state.spell_cooldown_ready(cfg.defensive_spell_id):
-                intent = MoveTo(x=state.self_x, y=state.self_y)
+            if not state.spell_cooldown_ready(cfg.defensive_spell_id):
                 return ReactiveDecision(
-                    action=ReactiveAction.DEFENSIVE,
-                    spell_id=cfg.defensive_spell_id,
-                    intent=intent,
-                    reason="defensive_low_hp",
+                    action=ReactiveAction.NONE,
+                    spell_id=None,
+                    intent=None,
+                    reason="defensive_on_cooldown",
                 )
+            intent = MoveTo(x=state.self_x, y=state.self_y)
             return ReactiveDecision(
-                action=ReactiveAction.NONE,
-                spell_id=None,
-                intent=None,
-                reason="defensive_on_cooldown",
+                action=ReactiveAction.DEFENSIVE,
+                spell_id=cfg.defensive_spell_id,
+                intent=intent,
+                reason="defensive_low_hp",
             )
 
         # 5. NONE

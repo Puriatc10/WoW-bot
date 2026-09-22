@@ -5,9 +5,7 @@ from __future__ import annotations
 import ctypes
 import os
 import sys
-from collections.abc import Callable
 from pathlib import Path
-from typing import Any
 
 from wow_bot.analysis.lab_soak_v2 import ResourceSnapshot
 
@@ -41,9 +39,9 @@ class PROCESS_MEMORY_COUNTERS(ctypes.Structure):
 class WindowsResourceSampler:
     """ResourceSampler implementation capturing current process RSS, CPU, and log size on Windows."""
 
-    _get_current_process: Callable[[], Any]
-    _get_process_times: Callable[..., Any]
-    _get_process_memory_info: Callable[..., Any]
+    _get_current_process: ctypes._NamedFuncPointer
+    _get_process_times: ctypes._NamedFuncPointer
+    _get_process_memory_info: ctypes._NamedFuncPointer
 
     def __init__(self, *, log_path: Path | None = None) -> None:
         if sys.platform != "win32" or not hasattr(ctypes, "WinDLL"):

@@ -488,10 +488,9 @@ def test_static_ast_import_isolation() -> None:
                 assert not any(
                     kw in mod.lower() for kw in ("ollama", "openai", "anthropic", "llm")
                 ), f"Prohibited LLM module imported: {mod}"
-        elif isinstance(node, ast.ImportFrom):
-            if node.module:
-                mod = node.module
-                assert mod not in prohibited_exact, f"Prohibited module imported: {mod}"
-                assert not any(
-                    kw in mod.lower() for kw in ("ollama", "openai", "anthropic", "llm")
-                ), f"Prohibited LLM module imported: {mod}"
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            mod = node.module
+            assert mod not in prohibited_exact, f"Prohibited module imported: {mod}"
+            assert not any(
+                kw in mod.lower() for kw in ("ollama", "openai", "anthropic", "llm")
+            ), f"Prohibited LLM module imported: {mod}"

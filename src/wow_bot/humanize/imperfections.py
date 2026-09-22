@@ -48,12 +48,12 @@ class ImperfectionConfig:
                 or isinstance(val, bool)
                 or not math.isfinite(val)
             ):
-                raise ValueError(f"{field_name} must be a finite float, got {val}")
+                raise TypeError(f"{field_name} must be a finite float, got {val}")
 
         if isinstance(self.max_pause_redraws, bool) or not isinstance(
             self.max_pause_redraws, int
         ):
-            raise ValueError(
+            raise TypeError(
                 f"max_pause_redraws must be an integer, got {self.max_pause_redraws}"
             )
 
@@ -104,15 +104,15 @@ class PauseDecision:
 
     def __post_init__(self) -> None:
         if not isinstance(self.occurred, bool):
-            raise ValueError("occurred must be a boolean")
+            raise TypeError("occurred must be a boolean")
         if (
             not isinstance(self.duration_s, (int, float))
             or isinstance(self.duration_s, bool)
             or not math.isfinite(self.duration_s)
         ):
-            raise ValueError("duration_s must be a finite float")
+            raise TypeError("duration_s must be a finite float")
         if not isinstance(self.reason, str) or len(self.reason.strip()) == 0:
-            raise ValueError("reason must be a non-empty string")
+            raise TypeError("reason must be a non-empty string")
 
         if not self.occurred:
             if self.duration_s != 0.0:
@@ -139,7 +139,7 @@ class MissClickDecision:
 
     def __post_init__(self) -> None:
         if not isinstance(self.occurred, bool):
-            raise ValueError("occurred must be a boolean")
+            raise TypeError("occurred must be a boolean")
         for field_name, val in (
             ("offset_x", self.offset_x),
             ("offset_y", self.offset_y),
@@ -151,10 +151,10 @@ class MissClickDecision:
                 or isinstance(val, bool)
                 or not math.isfinite(val)
             ):
-                raise ValueError(f"{field_name} must be a finite float")
+                raise TypeError(f"{field_name} must be a finite float")
 
         if not isinstance(self.reason, str) or len(self.reason.strip()) == 0:
-            raise ValueError("reason must be a non-empty string")
+            raise TypeError("reason must be a non-empty string")
 
         if not self.occurred:
             if self.offset_x != 0.0 or self.offset_y != 0.0 or self.magnitude != 0.0:

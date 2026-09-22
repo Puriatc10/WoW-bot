@@ -31,8 +31,9 @@ import multiprocessing.synchronize
 import queue
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable, Final, Protocol
+from typing import Any, Final, Protocol
 
 from wow_bot.shared.logger import get_logger
 from wow_bot.watchdog.health import HealthState
@@ -459,8 +460,10 @@ def watchdog_process_main(
             if reason_queue is not None:
                 try:
                     reason_queue.put_nowait(mapped_reason.value)
-                except Exception:  # noqa: BLE001
-                    pass
+                except Exception as exc:  # noqa: BLE001
+                    log.debug(
+                        f"Failed to enqueue shutdown reason {mapped_reason.value!r}: {exc}"
+                    )
             shutdown_event.set()
 
         if shutdown_event.is_set():
@@ -600,8 +603,8 @@ class WatchdogProcess:
                 if self._reason_queue is not None:
                     try:
                         reason_val = self._reason_queue.get_nowait()
-                    except Exception:  # noqa: BLE001
-                        pass
+                    except Exception as exc:  # noqa: BLE001
+                        log.debug(f"Failed to read shutdown reason from queue: {exc}")
                 reason = (
                     ShutdownReason(reason_val)
                     if reason_val in [r.value for r in ShutdownReason]

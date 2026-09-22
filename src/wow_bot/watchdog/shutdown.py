@@ -74,18 +74,18 @@ class ShutdownStepResult:
 
     def __post_init__(self) -> None:
         if not isinstance(self.step, ShutdownStep):
-            raise ValueError(f"step must be a ShutdownStep, got {type(self.step)}")
+            raise TypeError(f"step must be a ShutdownStep, got {type(self.step)}")
         if not isinstance(self.succeeded, bool):
-            raise ValueError("succeeded must be a bool")
+            raise TypeError("succeeded must be a bool")
         if (
             isinstance(self.duration_ms, bool)
             or not isinstance(self.duration_ms, (int, float))
             or not math.isfinite(self.duration_ms)
             or self.duration_ms < 0.0
         ):
-            raise ValueError("duration_ms must be a non-negative finite float")
+            raise TypeError("duration_ms must be a non-negative finite float")
         if not isinstance(self.error, str):
-            raise ValueError("error must be a string")
+            raise TypeError("error must be a string")
         if self.succeeded and self.error != "":
             raise ValueError("succeeded=True requires error == ''")
         if not self.succeeded and self.error == "":
@@ -111,14 +111,14 @@ class ShutdownReport:
 
     def __post_init__(self) -> None:
         if not isinstance(self.reason, ShutdownReason):
-            raise ValueError(f"reason must be a ShutdownReason, got {type(self.reason)}")
+            raise TypeError(f"reason must be a ShutdownReason, got {type(self.reason)}")
         if isinstance(self.exit_code, bool) or self.exit_code not in (0, 1):
             raise ValueError("exit_code must be 0 or 1")
         if not isinstance(self.steps, tuple) or len(self.steps) < 1:
-            raise ValueError("steps must be a non-empty tuple of ShutdownStepResult")
+            raise TypeError("steps must be a non-empty tuple of ShutdownStepResult")
         for s in self.steps:
             if not isinstance(s, ShutdownStepResult):
-                raise ValueError(f"All elements in steps must be ShutdownStepResult, got {type(s)}")
+                raise TypeError(f"All elements in steps must be ShutdownStepResult, got {type(s)}")
         if (
             isinstance(self.started_at, bool)
             or not isinstance(self.started_at, (int, float))
@@ -195,10 +195,11 @@ class ShutdownConfig:
         ):
             raise ValueError("total_timeout_s must be a finite float >= per_step_timeout_s")
         if not isinstance(self.write_snapshot, bool):
-            raise ValueError("write_snapshot must be a bool")
+            raise TypeError("write_snapshot must be a bool")
+        if not isinstance(self.snapshot_filename, str):
+            raise TypeError("snapshot_filename must be a string")
         if (
-            not isinstance(self.snapshot_filename, str)
-            or not self.snapshot_filename.strip()
+            not self.snapshot_filename.strip()
             or "/" in self.snapshot_filename
             or "\\" in self.snapshot_filename
             or ".." in self.snapshot_filename

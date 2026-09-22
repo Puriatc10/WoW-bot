@@ -177,8 +177,8 @@ def test_shutdown_step_result_invariants() -> None:
             error="",
         )
 
-    # Negative duration_ms raises ValueError
-    with pytest.raises(ValueError, match="duration_ms"):
+    # Negative duration_ms raises TypeError (type/range check)
+    with pytest.raises(TypeError, match="duration_ms"):
         ShutdownStepResult(
             step=ShutdownStep.MARK_CRITICAL,
             succeeded=True,
@@ -204,8 +204,8 @@ def test_shutdown_report_invariants() -> None:
             snapshot_path=None,
         )
 
-    # empty steps raises ValueError
-    with pytest.raises(ValueError, match="steps"):
+    # empty steps raises TypeError (type check)
+    with pytest.raises(TypeError, match="steps"):
         ShutdownReport(
             reason=ShutdownReason.HEALTH_CRITICAL,
             exit_code=0,

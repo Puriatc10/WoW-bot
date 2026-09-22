@@ -15,12 +15,30 @@ import sys
 from collections.abc import Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol, cast
+
+if TYPE_CHECKING:
+
+    class _ResourceModule(Protocol):
+        """Structural type for the Unix-only :mod:`resource` module surface used below.
+
+        On win32, typeshed does not define this module's members, so this shim
+        keeps the type-checker portable without changing runtime behavior.
+        """
+
+        RUSAGE_SELF: int
+
+        def getrusage(self, who: int) -> Any: ...
+
 
 try:
     import resource
+
+    # ``cast`` is a runtime no-op; it only tells mypy that the imported module
+    # matches the portable ``_ResourceModule`` structural view declared above.
+    resource_module: _ResourceModule | None = cast("_ResourceModule", resource)
 except ImportError:
-    resource = None  # type: ignore[assignment]
+    resource_module = None
 
 SOAK_SCHEMA_VERSION: int = 2
 
@@ -68,7 +86,7 @@ class ProcessResourceSampler:
     """ResourceSampler implementation capturing current process RSS, CPU, and log size on Linux/macOS."""
 
     def __init__(self, *, log_path: Path | None = None) -> None:
-        if resource is None:
+        if resource_module is None:
             raise RuntimeError("resource module is unavailable on this platform")
         self._log_path = log_path
         self._prev_cpu_time: float | None = None
@@ -76,7 +94,9 @@ class ProcessResourceSampler:
 
     def sample(self, now: float) -> ResourceSnapshot:
         """Sample current process resource usage at given timestamp `now`."""
-        rusage = resource.getrusage(resource.RUSAGE_SELF)
+        if resource_module is None:
+            raise RuntimeError("resource module is unavailable on this platform")
+        rusage = resource_module.getrusage(resource_module.RUSAGE_SELF)
         if sys.platform == "darwin":
             rss_bytes = int(rusage.ru_maxrss)
         else:

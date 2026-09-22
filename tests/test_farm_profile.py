@@ -1,10 +1,11 @@
 """Tests for farm profile loader and validator (T11.1)."""
 
 import ast
-import json
 import copy
+import json
 from pathlib import Path
 from types import MappingProxyType
+
 import pytest
 
 from wow_bot.farm import (
@@ -564,10 +565,13 @@ def test_ast_profile_no_time_calls() -> None:
     tree = ast.parse(path.read_text(encoding="utf-8"))
 
     for node in ast.walk(tree):
-        if isinstance(node, ast.Attribute):
-            if node.attr in ("monotonic", "time", "perf_counter"):
-                # Check if called on time or time module
-                assert False, f"Prohibited time call detected: {node.attr}"
+        if isinstance(node, ast.Attribute) and node.attr in (
+            "monotonic",
+            "time",
+            "perf_counter",
+        ):
+            # Check if called on time or time module
+            assert False, f"Prohibited time call detected: {node.attr}"
 
 
 def test_no_prelab_module_modified() -> None:

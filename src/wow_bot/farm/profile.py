@@ -5,11 +5,12 @@ where and how the farm loop operates.
 """
 
 import math
+import tomllib
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import MappingProxyType
-import tomllib
-from typing import Any, Mapping
+from typing import Any
 
 
 class FarmProfileError(Exception):
@@ -77,9 +78,7 @@ def _is_valid_name(name: Any) -> bool:
         return False
     if name.strip() != name:
         return False
-    if "\n" in name or "\r" in name:
-        return False
-    return True
+    return not ("\n" in name or "\r" in name)
 
 
 @dataclass(frozen=True)
@@ -102,10 +101,10 @@ class NodeReference:
                 f"Invalid node reference name '{self.name}'. Must be non-empty, stripped, without newlines."
             )
         if not isinstance(self.behavior_hints, Mapping):
-            raise ValueError("behavior_hints must be a Mapping")
+            raise TypeError("behavior_hints must be a Mapping")
         for k, v in self.behavior_hints.items():
             if not isinstance(k, str) or not isinstance(v, str):
-                raise ValueError("behavior_hints keys and values must be strings")
+                raise TypeError("behavior_hints keys and values must be strings")
 
 
 @dataclass(frozen=True)
@@ -136,9 +135,9 @@ class RoutePreferences:
 
     def __post_init__(self) -> None:
         if not isinstance(self.avoid_kinds, tuple):
-            raise ValueError("avoid_kinds must be a tuple")
+            raise TypeError("avoid_kinds must be a tuple")
         if not isinstance(self.prefer_kinds, tuple):
-            raise ValueError("prefer_kinds must be a tuple")
+            raise TypeError("prefer_kinds must be a tuple")
         for kind in self.avoid_kinds:
             if kind not in VALID_NODE_KINDS:
                 raise ValueError(f"Invalid avoid_kind '{kind}'")
@@ -151,7 +150,7 @@ class RoutePreferences:
             isinstance(self.max_detour_factor, bool)
             or not isinstance(self.max_detour_factor, (int, float))
         ):
-            raise ValueError("max_detour_factor must be a float")
+            raise TypeError("max_detour_factor must be a float")
         detour = float(self.max_detour_factor)
         if not math.isfinite(detour) or detour < 1.0:
             raise ValueError("max_detour_factor must be finite and >= 1.0")
@@ -169,22 +168,22 @@ class CycleSpec:
 
     def __post_init__(self) -> None:
         if not isinstance(self.nodes, tuple) or len(self.nodes) == 0:
-            raise ValueError("nodes must be a non-empty tuple")
+            raise TypeError("nodes must be a non-empty tuple")
         for node in self.nodes:
             if not isinstance(node, NodeReference):
-                raise ValueError("All elements in nodes must be NodeReference instances")
+                raise TypeError("All elements in nodes must be NodeReference instances")
         if not isinstance(self.vendor, VendorReference):
-            raise ValueError("vendor must be a VendorReference instance")
+            raise TypeError("vendor must be a VendorReference instance")
         if not isinstance(self.repair, VendorReference):
-            raise ValueError("repair must be a VendorReference instance")
+            raise TypeError("repair must be a VendorReference instance")
         if not isinstance(self.stop_when_inventory_full, bool):
-            raise ValueError("stop_when_inventory_full must be a bool")
+            raise TypeError("stop_when_inventory_full must be a bool")
         if (
             isinstance(self.stop_after_cycles, bool)
             or not isinstance(self.stop_after_cycles, int)
             or self.stop_after_cycles < 0
         ):
-            raise ValueError("stop_after_cycles must be an integer >= 0")
+            raise TypeError("stop_after_cycles must be an integer >= 0")
 
 
 @dataclass(frozen=True)
@@ -204,22 +203,22 @@ class FarmProfile:
             or not isinstance(self.schema_version, int)
             or self.schema_version != PROFILE_SCHEMA_VERSION
         ):
-            raise ValueError(f"schema_version must equal {PROFILE_SCHEMA_VERSION}")
+            raise TypeError(f"schema_version must equal {PROFILE_SCHEMA_VERSION}")
         if not _is_valid_name(self.name):
             raise ValueError(
                 f"Invalid profile name '{self.name}'. Must be non-empty, stripped, without newlines."
             )
         if not isinstance(self.description, str):
-            raise ValueError("description must be a string")
+            raise TypeError("description must be a string")
         if not isinstance(self.cycle, CycleSpec):
-            raise ValueError("cycle must be a CycleSpec instance")
+            raise TypeError("cycle must be a CycleSpec instance")
         if not isinstance(self.route_preferences, RoutePreferences):
-            raise ValueError("route_preferences must be a RoutePreferences instance")
+            raise TypeError("route_preferences must be a RoutePreferences instance")
         if not isinstance(self.metadata, Mapping):
-            raise ValueError("metadata must be a Mapping")
+            raise TypeError("metadata must be a Mapping")
         for k, v in self.metadata.items():
             if not isinstance(k, str) or not isinstance(v, str):
-                raise ValueError("metadata keys and values must be strings")
+                raise TypeError("metadata keys and values must be strings")
 
 
 def _parse_and_validate_dict(data: dict[str, Any]) -> FarmProfile:
@@ -318,7 +317,7 @@ def _parse_and_validate_dict(data: dict[str, Any]) -> FarmProfile:
                 name=raw_node["name"],
                 behavior_hints=behavior_hints,
             )
-        except ValueError as exc:
+        except (ValueError, TypeError) as exc:
             raise FarmProfileError(f"Invalid node reference at index {idx}: {exc}") from exc
         parsed_nodes.append(node_ref)
 
@@ -337,7 +336,7 @@ def _parse_and_validate_dict(data: dict[str, Any]) -> FarmProfile:
 
     try:
         vendor_ref = VendorReference(kind=raw_vendor["kind"], name=raw_vendor["name"])
-    except ValueError as exc:
+    except (ValueError, TypeError) as exc:
         raise FarmProfileError(f"Invalid 'vendor' reference: {exc}") from exc
 
     if "repair" in cycle_sec:
@@ -354,7 +353,7 @@ def _parse_and_validate_dict(data: dict[str, Any]) -> FarmProfile:
 
         try:
             repair_ref = VendorReference(kind=raw_repair["kind"], name=raw_repair["name"])
-        except ValueError as exc:
+        except (ValueError, TypeError) as exc:
             raise FarmProfileError(f"Invalid 'repair' reference: {exc}") from exc
     else:
         repair_ref = vendor_ref
@@ -375,7 +374,7 @@ def _parse_and_validate_dict(data: dict[str, Any]) -> FarmProfile:
             stop_when_inventory_full=stop_inv_full,
             stop_after_cycles=stop_cycles,
         )
-    except ValueError as exc:
+    except (ValueError, TypeError) as exc:
         raise FarmProfileError(f"Invalid cycle specification: {exc}") from exc
 
     # 4. Validate optional [route_preferences] section
@@ -414,7 +413,7 @@ def _parse_and_validate_dict(data: dict[str, Any]) -> FarmProfile:
                 prefer_kinds=tuple(prefer_kinds_raw),
                 max_detour_factor=float(detour_raw),
             )
-        except ValueError as exc:
+        except (ValueError, TypeError) as exc:
             raise FarmProfileError(f"Invalid [route_preferences]: {exc}") from exc
     else:
         route_prefs = RoutePreferences()
@@ -441,7 +440,7 @@ def _parse_and_validate_dict(data: dict[str, Any]) -> FarmProfile:
             route_preferences=route_prefs,
             metadata=meta_dict,
         )
-    except ValueError as exc:
+    except (ValueError, TypeError) as exc:
         raise FarmProfileError(f"Invalid profile construction: {exc}") from exc
 
 

@@ -79,7 +79,7 @@ class LoopConfig:
             raise ValueError(f"stagnation_epsilon must be >= 0.0, got {self.stagnation_epsilon}")
 
         if not isinstance(self.emit_on_stagnation_only, bool):
-            raise ValueError("emit_on_stagnation_only must be a boolean")
+            raise TypeError("emit_on_stagnation_only must be a boolean")
 
 
 @dataclass(frozen=True)
@@ -141,7 +141,7 @@ class LoopDetection:
 
     def __post_init__(self) -> None:
         if not isinstance(self.detected, bool):
-            raise ValueError("detected must be a boolean")
+            raise TypeError("detected must be a boolean")
 
         if (
             isinstance(self.ts, bool)
@@ -237,7 +237,7 @@ class LoopEvent:
             raise ValueError(f"repeats must be an integer >= 2, got {self.repeats}")
 
         if not isinstance(self.signature_hashes, tuple):
-            raise ValueError("signature_hashes must be a tuple")
+            raise TypeError("signature_hashes must be a tuple")
 
         if len(self.signature_hashes) != self.cycle_length:
             raise ValueError(

@@ -101,6 +101,7 @@ class RuntimeComponents:
     watchdog: WatchdogProcess
     idle_engine: IdleBehaviorEngine
     observer: PipelineObserver | None = None
+    _watchdog_shutdown_wire: _WatchdogShutdownWire | None = None
 
 
 def _put_latest[T](queue: asyncio.Queue[T], item: T) -> None:
@@ -561,7 +562,7 @@ def _wire_watchdog_shutdown(components: RuntimeComponents) -> None:
     wire = _WatchdogShutdownWire(components)
     if hasattr(components.watchdog, "on_shutdown_request"):
         components.watchdog.on_shutdown_request(wire.on_shutdown_request)
-    setattr(components, "_watchdog_shutdown_wire", wire)
+    components._watchdog_shutdown_wire = wire
 
 
 async def watchdog_shutdown_bridge(

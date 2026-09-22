@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+
 from wow_bot.actuation.backends.focus_null import NullFocusBackend
 from wow_bot.combat.rotation import RotationConfig
 from wow_bot.config import Config
@@ -588,6 +589,7 @@ def test_cli_script_help() -> None:
         [sys.executable, "scripts/lab/run_farm_v2.py", "--help"],
         capture_output=True,
         text=True,
+        check=False,
     )
     assert res.returncode == 0
     assert "usage:" in res.stdout
@@ -600,6 +602,7 @@ def test_cli_script_mock_run() -> None:
         [sys.executable, "scripts/lab/run_farm_v2.py", "--max-cycles", "5", "--mode", "MOCK"],
         capture_output=True,
         text=True,
+        check=False,
     )
     assert res.returncode == 0
     data = json.loads(res.stdout)

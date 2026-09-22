@@ -77,7 +77,7 @@ from wow_bot.strategist.orchestrator_v2 import (
     OrchestratorOutcome,
     OrchestratorV2,
 )
-from wow_bot.strategist.vocab_v2 import VocabularyGuard, VocabConfig
+from wow_bot.strategist.vocab_v2 import VocabConfig, VocabularyGuard
 from wow_bot.watchdog.health import HealthConfig, HealthState, HealthStateMachine
 from wow_bot.watchdog.loops import ActionObservation, LoopConfig, LoopDetector
 from wow_bot.watchdog.metrics import MetricsConfig, ProgressSample, ProgressTracker
@@ -163,7 +163,7 @@ class LabRunnerConfig:
                 f"vendor_repair_threshold must be a float in [0.0, 1.0], got {self.vendor_repair_threshold!r}"
             )
         if not isinstance(self.fail_on_async_context, bool):
-            raise ValueError("fail_on_async_context must be a boolean")
+            raise TypeError("fail_on_async_context must be a boolean")
 
 
 @dataclass(frozen=True)
@@ -289,27 +289,31 @@ class _TelemetryClockAdapter:
 
 def _extract_position(state: object) -> tuple[float, float]:
     """Extract (x, y) coordinates from a game state object."""
+    # Attribute names are static; existence is probed with hasattr and accessed
+    # directly rather than via getattr (B009).
     if hasattr(state, "position"):
-        pos = getattr(state, "position")
+        pos = state.position
         if isinstance(pos, (tuple, list)) and len(pos) >= 2:
             return (float(pos[0]), float(pos[1]))
     if hasattr(state, "player_x") and hasattr(state, "player_y"):
-        return (float(getattr(state, "player_x")), float(getattr(state, "player_y")))
+        return (float(state.player_x), float(state.player_y))
     if hasattr(state, "self_x") and hasattr(state, "self_y"):
-        return (float(getattr(state, "self_x")), float(getattr(state, "self_y")))
+        return (float(state.self_x), float(state.self_y))
     if hasattr(state, "x") and hasattr(state, "y"):
-        return (float(getattr(state, "x")), float(getattr(state, "y")))
+        return (float(state.x), float(state.y))
     return (0.0, 0.0)
 
 
 def _extract_heading(state: object) -> float:
     """Extract player heading from a game state object."""
+    # Attribute names are static; existence is probed with hasattr and accessed
+    # directly rather than via getattr (B009).
     if hasattr(state, "player_heading"):
-        return float(getattr(state, "player_heading"))
+        return float(state.player_heading)
     if hasattr(state, "heading"):
-        return float(getattr(state, "heading"))
+        return float(state.heading)
     if hasattr(state, "self_heading"):
-        return float(getattr(state, "self_heading"))
+        return float(state.self_heading)
     return 0.0
 
 
@@ -756,16 +760,10 @@ async def _run_cycle(
     # Subsystem dispatch
     curr_fsm_state = runtime.fsm.current_state
 
-    if curr_fsm_state == FSMState.LOOTING or new_goal == "loot":
-        intent = runtime.fsm.tick(state, meta, now=runtime.clock())
-        if intent is not None:
-            act_res = runtime.actuator.execute(intent, position=pos)
-            fb = classify_action_result(act_res, ts=runtime.clock())
-            runtime.fsm.submit_feedback(fb, now=runtime.clock())
-            if act_res.status == ActionStatus.FAILED:
-                failed = True
-
-    elif curr_fsm_state == FSMState.COMBAT or new_goal in ("grind_humans", "farm_herbs", "combat"):
+    if (
+        curr_fsm_state in (FSMState.LOOTING, FSMState.COMBAT)
+        or new_goal in ("loot", "grind_humans", "farm_herbs", "combat")
+    ):
         intent = runtime.fsm.tick(state, meta, now=runtime.clock())
         if intent is not None:
             act_res = runtime.actuator.execute(intent, position=pos)
@@ -1022,7 +1020,7 @@ def run_lab_loop(
     async_event: asyncio.Event | None = None
     if stop_event is not None and hasattr(stop_event, "is_set"):
         async_event = asyncio.Event()
-        if getattr(stop_event, "is_set")():
+        if stop_event.is_set():
             async_event.set()
 
     return asyncio.run(

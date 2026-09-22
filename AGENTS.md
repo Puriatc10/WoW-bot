@@ -160,6 +160,27 @@ Do not rewrite T12.2 or T12.3. Real perception and live actuation remain
 outside this review. Section 5.4 still applies to implementation work;
 existing failures may be investigated and reported within this review.
 
+### 5.0 Bounded exception: T-FIX-01 static debt cleanup
+
+The task **T-FIX-01 static debt cleanup** authorizes a single, bounded
+exception to STRATEGY A. Its sole purpose is to clear the Ruff and
+mypy diagnostics reported by `uv run ruff check src tests scripts` and
+`uv run mypy src` at the commit where T-FIX-01 starts, so that the
+baseline is clean before Phase 13 begins and new defects cannot hide
+behind pre-existing noise.
+
+This exception authorizes edits ONLY for the purpose of clearing those
+exact diagnostics as enumerated by the tools. It does NOT authorize
+behavior changes beyond what the listed rules require, and it does NOT
+authorize edits to NON_CLAIMS wording, the T12.0 scope split, schema
+definitions (field names, types, or defaults in
+`reporting/schema_v2.py`, `analysis/lab_soak_v2.py`, or
+`analysis/aggregate.py`), or the aggregate contract.
+
+After T-FIX-01 merges, this exception is closed. Any future edit to a
+module that STRATEGY A treats as FROZEN requires its own explicit
+exception recorded in this file.
+
 ### 5.1 Source of Tasks
 
 Tasks are defined exclusively in `LAB_PHASE_ROADMAP.md`. Do not invent
