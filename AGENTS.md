@@ -149,7 +149,7 @@ The user-authorized Pre-Phase-13 review may audit across roadmap tasks,
 write `docs/reviews/PRE_PHASE_13_REVIEW.md`, fix failing tests without
 weakening acceptance, and fix demonstrated readiness blockers in lab
 modules. For this review only, the single-task and declared-file scope
-rules in sections 5.1 and 5.2 do not apply. No roadmap task is added,
+rules in sections 5.2 and 5.3 do not apply. No roadmap task is added,
 reordered, or declared complete. Unresolved failures in frozen modules
 are documented rather than treated as permission to change them.
 
@@ -157,7 +157,7 @@ All pre-lab modules remain frozen under Strategy A. Do not change the
 GameState schema, SafetyLayer, Session, Config, NON_CLAIMS wording,
 T12.0 reporting split, SOAK_PROTOCOL.md, RESULTS.md, or the lab roadmap.
 Do not rewrite T12.2 or T12.3. Real perception and live actuation remain
-outside this review. Section 5.4 still applies to implementation work;
+outside this review. Section 5.5 still applies to implementation work;
 existing failures may be investigated and reported within this review.
 
 ### 5.0 Bounded exception: T-FIX-01 static debt cleanup
@@ -181,7 +181,20 @@ After T-FIX-01 merges, this exception is closed. Any future edit to a
 module that STRATEGY A treats as FROZEN requires its own explicit
 exception recorded in this file.
 
-### 5.1 Source of Tasks
+### 5.1 Bounded exception: T-FIX-02 NON_CLAIMS single source of truth
+
+The task T-FIX-02 authorizes editing
+docs/SOAK_PROTOCOL.md and src/wow_bot/analysis/aggregate.py
+ONLY for the purpose of aligning the four non-claim statements
+with the single source of truth at docs/non_claims.json.
+It does NOT authorize any other change to those files. It does
+NOT authorize changes to the T12.0 scope split, to schema
+definitions, or to the aggregate runtime contract. In
+particular, aggregate.py MUST continue to hardcode its
+NON_CLAIMS tuple and MUST NOT read files at import time.
+After T-FIX-02 merges, this exception is closed.
+
+### 5.2 Source of Tasks
 
 Tasks are defined exclusively in `LAB_PHASE_ROADMAP.md`. Do not invent
 tasks. Do not merge tasks. Do not reorder tasks without updating the
@@ -195,7 +208,7 @@ Each task has:
 - Acceptance criteria (testable)
 - Out-of-scope items
 
-### 5.2 PR Rules
+### 5.3 PR Rules
 
 Every PR MUST:
 
@@ -211,14 +224,14 @@ Every PR MUST:
 PRs that expand scope, combine tasks, or skip acceptance tests MUST be
 rejected.
 
-### 5.3 Prompt Template for Coding Agents
+### 5.4 Prompt Template for Coding Agents
 
 When handing a task to an automated agent (Jules or equivalent), use the
 template in Appendix B of `LAB_PHASE_ROADMAP.md`. Do not paraphrase the
 task; copy the deliverables, contract, acceptance, and out-of-scope
 sections verbatim.
 
-### 5.4 When to Stop and Ask
+### 5.5 When to Stop and Ask
 
 An agent MUST stop and request review if any of the following occur:
 

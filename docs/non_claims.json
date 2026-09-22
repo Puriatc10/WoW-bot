@@ -1,0 +1,9 @@
+{
+  "_comment": "Single source of truth for the four non-claim statements. The wording here MUST match src/wow_bot/analysis/aggregate.py's NON_CLAIMS tuple exactly. Consistency with docs/SOAK_PROTOCOL.md is enforced by tests/test_non_claims_consistency.py.",
+  "non_claims": [
+    "We do NOT claim the agent farmed successfully in a real game. Perception was mocked; outcomes were not observed.",
+    "We do NOT claim anti-cheat evasion.",
+    "We do NOT claim humanizer timing would evade detection.",
+    "We do NOT claim 24-hour stability. Only 1 hour was measured in Phase 12."
+  ]
+}

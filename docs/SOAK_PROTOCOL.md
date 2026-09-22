@@ -77,9 +77,11 @@ Metrics reported:
 ## Non-Claims for the Phase 12 Soak
 
 The Phase 12 soak does NOT establish:
-  - in-game farm success
-  - navigation robustness against real obstacles
-  - human-likeness versus real gameplay
-  - any anti-cheat-related claim
+  - We do NOT claim the agent farmed successfully in a real game. Perception was mocked; outcomes were not observed.
+  - We do NOT claim anti-cheat evasion.
+  - We do NOT claim humanizer timing would evade detection.
+  - We do NOT claim 24-hour stability. Only 1 hour was measured in Phase 12.
+
+The authoritative wording of these statements is the single source of truth at `docs/non_claims.json`, which is verified to be byte-for-byte identical to the `NON_CLAIMS` tuple in `src/wow_bot/analysis/aggregate.py` by `tests/test_non_claims_consistency.py`.
 
 Results of the Phase 12 soak MUST be reported with these non-claims alongside them.
