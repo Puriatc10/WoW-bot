@@ -1,0 +1,7 @@
+path: C:/Users/EXO/Desktop/wow-bot/datasets/my_dataset
+train: images/train
+val: images/val
+
+nc: 1
+names:
+  0: enemy
