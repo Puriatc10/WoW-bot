@@ -76,11 +76,29 @@ class TargetInfo:
 
 @dataclass
 class EnemyInfo:
-    """One detected enemy bounding box from the perception layer."""
+    """One detected enemy from the perception layer.
+
+    ADR-002 Decision 3 extends this in place into a superset type so one entity
+    list serves both ``world.sync.EntityLike`` (world sync) and
+    ``combat.targeting.TargetEntityLike`` (combat targeting). ``bbox`` and
+    ``confidence`` stay as detection provenance, not world state: neither view
+    consumes them. All added fields are Optional; None means "not observed".
+    """
 
     bbox: tuple[int, int, int, int]  # x, y, w, h
     confidence: float  # 0..1
     distance_estimate: float  # yards, approximate
+    # ADR-002 Decision 3 additive fields, appended after the existing three.
+    entity_id: str | None = None  # observed/assigned: stable across frames
+    kind: str | None = None  # observed: VALID_NODE_KINDS label, world sync skips others
+    x: float | None = None  # observed: world-space position
+    y: float | None = None  # observed: world-space position
+    z: float | None = None  # observed: world-space position
+    hp_fraction: float | None = None  # observed: 0..1
+    threat: float | None = None  # observed: threat points, >= 0, sort metric
+    is_attackable: bool | None = None  # observed: TargetEntityLike filter
+    is_alive: bool | None = None  # observed: TargetEntityLike filter
+    is_in_combat_with_self: bool | None = None  # observed: TargetEntityLike filter
 
     def __post_init__(self) -> None:
         _require(len(self.bbox) == 4, f"bbox must have 4 components, got {self.bbox}")
@@ -99,6 +117,16 @@ class EnemyInfo:
             "bbox": list(self.bbox),  # JSON has no tuple type
             "confidence": self.confidence,
             "distance_estimate": self.distance_estimate,
+            "entity_id": self.entity_id,
+            "kind": self.kind,
+            "x": self.x,
+            "y": self.y,
+            "z": self.z,
+            "hp_fraction": self.hp_fraction,
+            "threat": self.threat,
+            "is_attackable": self.is_attackable,
+            "is_alive": self.is_alive,
+            "is_in_combat_with_self": self.is_in_combat_with_self,
         }
 
     @classmethod
@@ -112,6 +140,16 @@ class EnemyInfo:
             bbox=(int(raw_bbox[0]), int(raw_bbox[1]), int(raw_bbox[2]), int(raw_bbox[3])),
             confidence=float(data["confidence"]),
             distance_estimate=float(data["distance_estimate"]),
+            entity_id=data.get("entity_id"),
+            kind=data.get("kind"),
+            x=data.get("x"),
+            y=data.get("y"),
+            z=data.get("z"),
+            hp_fraction=data.get("hp_fraction"),
+            threat=data.get("threat"),
+            is_attackable=data.get("is_attackable"),
+            is_alive=data.get("is_alive"),
+            is_in_combat_with_self=data.get("is_in_combat_with_self"),
         )
 
 
@@ -140,6 +178,39 @@ class Event:
         )
 
 
+@dataclass(frozen=True)
+class IncomingCast:
+    """One enemy cast observed in progress (ADR-002, "Enemy cast bar" channel).
+
+    Channel-pending: no row in the ``docs/PERCEPTION.md`` vision table exists
+    for it yet, so a producer emits an empty ``incoming_casts`` collection
+    rather than inventing casts — the empty collection is the honest "no casts
+    observed this frame", unlike ``None``.
+    """
+
+    caster_entity_id: str
+    spell_id: str
+    remaining_cast_time_s: float  # seconds, >= 0.0
+    is_interruptible: bool
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "caster_entity_id": self.caster_entity_id,
+            "spell_id": self.spell_id,
+            "remaining_cast_time_s": self.remaining_cast_time_s,
+            "is_interruptible": self.is_interruptible,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> IncomingCast:
+        return cls(
+            caster_entity_id=str(data["caster_entity_id"]),
+            spell_id=str(data["spell_id"]),
+            remaining_cast_time_s=float(data["remaining_cast_time_s"]),
+            is_interruptible=bool(data["is_interruptible"]),
+        )
+
+
 @dataclass
 class GameState:
     """Snapshot emitted by the perception layer each frame."""
@@ -153,6 +224,24 @@ class GameState:
     target: TargetInfo | None
     enemies: list[EnemyInfo]
     events: list[Event]
+    # ADR-002 additive observed fields (T-FIX-03.6). Every field below is
+    # appended after `events`, so no existing positional construction changes
+    # binding; each defaults to None / an empty factory, where None means "not
+    # observed this frame" and a genuine zero is a real observed value.
+    player_z: float | None = None  # observed: world-space player elevation
+    target_x: float | None = None  # observed: world-space target position
+    target_y: float | None = None  # observed: world-space target position
+    # observed: one canonical entity channel, supersedes the role of `enemies`
+    entities: tuple[EnemyInfo, ...] = field(default_factory=tuple)
+    # observed: field-path -> confidence in [0.0, 1.0] (ADR-002 Decision 4)
+    perception_confidence: dict[str, float] = field(default_factory=dict)
+    inventory_count: int | None = None  # channel-pending: "Bag frame"
+    inventory_max: int | None = None  # channel-pending: "Bag frame"
+    level_or_xp: float | None = None  # channel-pending: "XP bar"
+    durability_fraction: float | None = None  # channel-pending: "Character frame"
+    target_is_lootable: bool | None = None  # channel-pending: "Lootable-corpse indicator"
+    # channel-pending: "Enemy cast bar"; empty means "no casts observed"
+    incoming_casts: tuple[IncomingCast, ...] = field(default_factory=tuple)
 
     def __post_init__(self) -> None:
         _require(0.0 <= self.hp_pct <= 1.0, f"hp_pct out of [0,1]: {self.hp_pct}")
@@ -173,6 +262,17 @@ class GameState:
             "target": self.target.to_dict() if self.target is not None else None,
             "enemies": [enemy.to_dict() for enemy in self.enemies],
             "events": [event.to_dict() for event in self.events],
+            "player_z": self.player_z,
+            "target_x": self.target_x,
+            "target_y": self.target_y,
+            "entities": [entity.to_dict() for entity in self.entities],
+            "perception_confidence": dict(self.perception_confidence),
+            "inventory_count": self.inventory_count,
+            "inventory_max": self.inventory_max,
+            "level_or_xp": self.level_or_xp,
+            "durability_fraction": self.durability_fraction,
+            "target_is_lootable": self.target_is_lootable,
+            "incoming_casts": [cast.to_dict() for cast in self.incoming_casts],
         }
 
     @classmethod
@@ -193,6 +293,19 @@ class GameState:
             target=TargetInfo.from_dict(raw_target) if raw_target is not None else None,
             enemies=[EnemyInfo.from_dict(e) for e in data.get("enemies", [])],
             events=[Event.from_dict(e) for e in data.get("events", [])],
+            player_z=data.get("player_z"),
+            target_x=data.get("target_x"),
+            target_y=data.get("target_y"),
+            entities=tuple(EnemyInfo.from_dict(e) for e in data.get("entities", [])),
+            perception_confidence=dict(data.get("perception_confidence", {})),
+            inventory_count=data.get("inventory_count"),
+            inventory_max=data.get("inventory_max"),
+            level_or_xp=data.get("level_or_xp"),
+            durability_fraction=data.get("durability_fraction"),
+            target_is_lootable=data.get("target_is_lootable"),
+            incoming_casts=tuple(
+                IncomingCast.from_dict(c) for c in data.get("incoming_casts", [])
+            ),
         )
 
 

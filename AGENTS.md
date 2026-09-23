@@ -194,6 +194,34 @@ particular, aggregate.py MUST continue to hardcode its
 NON_CLAIMS tuple and MUST NOT read files at import time.
 After T-FIX-02 merges, this exception is closed.
 
+### 5.6 Bounded exception: T-FIX-03.6 GameState extension (implements ADR-002)
+
+The task T-FIX-03.6 implements
+`docs/decisions/ADR-002-gamestate-extension.md` Decisions 2, 3, and 5 and
+authorizes a single, bounded exception to STRATEGY A. Its sole purpose is to
+add the eleven observed fields enumerated in ADR-002 (five observed today, six
+channel-pending) to `GameState` and `EnemyInfo` in
+`src/wow_bot/shared/interfaces.py` as `Optional` fields with `None` or
+empty-factory defaults, appended after all existing fields, together with the
+matching `to_dict`/`from_dict` round trip and the population of those fields by
+`MockPerception` in `src/wow_bot/mocks/mock_perception.py`. This is the only
+file scope of the exception: `shared/interfaces.py` and
+`mocks/mock_perception.py`. `resource_max` and `target_is_alive` are NOT added:
+they are derived by the perception adapter and never stored on `GameState`.
+
+It does NOT authorize renaming or removing any existing field, changing
+any existing field's type or default, changing the positional argument
+order of any existing constructor, modifying `MetaState`, `Strategy`, or
+`TargetInfo`, changing any of the eight consumer Protocols, changing
+`PerceptionBackend.snapshot()`, `main.perception_loop`, or
+`lab/runner_v2.py`, or fabricating values for fields a producer cannot
+observe. It does NOT authorize changes to NON_CLAIMS wording, the T12.0
+scope split, the aggregate contract, or any Phase 12 artifact.
+
+After T-FIX-03.6 merges, this exception is closed. Any future edit to a
+module that STRATEGY A treats as FROZEN requires its own explicit
+exception recorded in this file.
+
 ### 5.2 Source of Tasks
 
 Tasks are defined exclusively in `LAB_PHASE_ROADMAP.md`. Do not invent

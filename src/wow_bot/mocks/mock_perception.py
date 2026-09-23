@@ -310,6 +310,21 @@ class MockPerception:
         events = self._collect_events(ts, now_wall)
         target, enemies = self._make_combat_entities()
 
+        # ADR-002 (T-FIX-03.6) observed extensions. Values are derived from
+        # synthetic state the mock already models; fields the mock has no
+        # model for stay None ("not observed"), never a fabricated default.
+        target_x: float | None
+        target_y: float | None
+        if target is not None:
+            # The selected target sits at its estimated distance along the
+            # player's facing direction: a deterministic projection of the
+            # mock's own position / facing / distance state.
+            target_x = self._position[0] + math.cos(self._facing) * target.distance_estimate
+            target_y = self._position[1] + math.sin(self._facing) * target.distance_estimate
+        else:
+            target_x = None
+            target_y = None
+
         return GameState(
             timestamp=ts,
             hp_pct=self._hp,
@@ -320,6 +335,17 @@ class MockPerception:
             target=target,
             enemies=enemies,
             events=events,
+            player_z=None,  # the mock world model is 2-D; no height channel
+            target_x=target_x,
+            target_y=target_y,
+            entities=tuple(enemies),  # same synthetic mobs, world-sync channel
+            perception_confidence={},  # map population is task T-FIX-22
+            inventory_count=None,  # channel-pending: "Bag frame"
+            inventory_max=None,  # channel-pending: "Bag frame"
+            level_or_xp=None,  # channel-pending: "XP bar"
+            durability_fraction=None,  # channel-pending: "Character frame"
+            target_is_lootable=None,  # channel-pending: "Lootable-corpse indicator"
+            incoming_casts=(),  # honest "no casts observed this frame"
         )
 
     # ------------------------------------------------------------------
@@ -454,8 +480,36 @@ class MockPerception:
             bh = int(self._rng.integers(32, 128))
             conf = float(self._rng.uniform(0.6, 1.0))
             dist = float(self._rng.uniform(5.0, 40.0))
+            hp_fraction = float(self._rng.uniform(0.2, 1.0))
+            # Derive the mock entity's world position from the data this
+            # method already samples: the detection distance along a
+            # per-entity bearing, offset from the player's own position.
+            bearing = float(self._rng.uniform(0.0, 2.0 * np.pi))
+            ex = self._position[0] + math.cos(bearing) * dist
+            ey = self._position[1] + math.sin(bearing) * dist
+            # entity_id is deterministic given the detection, and unique per
+            # distinct mob: derived from the entity's own sampled bbox rather
+            # than an unrelated random. The mock does not track persistent
+            # mobs across frames, so it cannot offer ADR-002's ideal
+            # cross-frame id stability; that is a mock limitation, not a
+            # fabricated value.
+            entity_id = f"mock_mob_{bx}_{by}_{bw}_{bh}"
             enemies.append(
-                EnemyInfo(bbox=(bx, by, bw, bh), confidence=conf, distance_estimate=dist)
+                EnemyInfo(
+                    bbox=(bx, by, bw, bh),
+                    confidence=conf,
+                    distance_estimate=dist,
+                    entity_id=entity_id,
+                    kind="mob",
+                    x=ex,
+                    y=ey,
+                    z=None,  # the mock world model is 2-D; no height channel
+                    hp_fraction=hp_fraction,
+                    threat=None,  # no vision component observes threat
+                    is_attackable=True,
+                    is_alive=hp_fraction > 0.0,
+                    is_in_combat_with_self=True,
+                )
             )
 
         target = TargetInfo(
