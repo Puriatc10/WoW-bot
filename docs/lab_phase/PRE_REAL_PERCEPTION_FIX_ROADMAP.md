@@ -33,10 +33,11 @@ failure introduced by T-FIX-03.6 was fixed by **T-FIX-21**, which makes an
 empty entity channel fall back to the selected target instead of reporting a
 fabricated empty world.
 
-**Latest full-suite result:** `1 failed, 2258 passed, 7 skipped, 1 xfailed`.
-The single failure is the spectral gate above. `tests/test_perception_adapter.py`
-and `tests/test_perception_derivation.py` together report
-`53 passed, 1 xfailed`.
+**Latest full-suite result** (re-verified with T-FIX-28 in the working tree):
+`1 failed, 2415 passed, 7 skipped, 1 xfailed`. The single failure is the
+spectral gate above. `tests/test_perception_adapter.py`,
+`tests/test_perception_derivation.py`, and `tests/test_perception_builder.py`
+together report `83 passed, 1 xfailed`.
 
 ---
 
@@ -115,9 +116,9 @@ Tier names are unchanged from the original revision of this document.
 | 6 | T-FIX-19 | Percentile proxy semantics documentation | PENDING |
 | 7 — Deferred / unowned gaps | T-FIX-25 | Strategist plan refresh and lifetime | PROPOSED |
 | 7 | T-FIX-26 | Farm profile as an executed cycle plan | PROPOSED |
-| 8 — Real perception port (from `hamberger`) | T-FIX-29 | Dependencies, assets, perception configuration | PROPOSED |
-| 8 | T-FIX-27 | Port capture and readers | PROPOSED |
-| 8 | T-FIX-28 | Real state builder → canonical `GameState` | PROPOSED |
+| 8 — Real perception port (from `hamberger`) | T-FIX-29 | Dependencies, assets, perception configuration | DONE |
+| 8 | T-FIX-27 | Port capture and readers | DONE |
+| 8 | T-FIX-28 | Real state builder → canonical `GameState` | DONE* |
 | 8 | T-FIX-30 | World pose, target distance, reaction channels | PROPOSED |
 | 8 | T-FIX-31 | UI panel channels (implements T-FIX-23) | PROPOSED |
 | 8 | T-FIX-32 | `RealPerceptionBackend`, gated | PROPOSED |
@@ -1390,7 +1391,7 @@ normative.
 
 ## T-FIX-29 — Dependencies, assets, and perception configuration
 
-**Status:** PENDING (proposed)
+**Status:** DONE (commit `d81ce69`, "T-FIX-27", which also carried this task)
 **Depends on:** none
 **Deliverables:**
 - `pyproject.toml` — `mss`, `opencv-python-headless`, `pytesseract`; the YOLO
@@ -1410,11 +1411,21 @@ normative.
   the dependency is rejected rather than tolerated (plan doc R-6).
 
 **Acceptance:**
-- [ ] Full suite passes in MOCK_MODE with neither Tesseract nor YOLO installed.
-- [ ] Every new key is in `config/lab.example.toml` with a comment; an
-      unknown key still raises `ConfigError`.
-- [ ] No `.pt` file is staged.
-- [ ] `ruff` and `mypy` clean.
+- [x] Full suite passes in MOCK_MODE with neither Tesseract nor YOLO installed.
+      At HEAD `d81ce69`: `1 failed, 2385 passed, 7 skipped, 1 xfailed`. The
+      single failure is the pre-existing spectral gate owned by T-FIX-10, not
+      a perception dependency; every perception test runs without the optional
+      stack.
+- [x] Every new key is in `config/lab.example.toml` with a comment; an
+      unknown key still raises `ConfigError`. The keys are documented as
+      comments because the frozen lab `Config` rejects unknown keys; the
+      authoritative file is `config/perception.example.toml`, read by
+      `perception/perception_config.py`. `tests/test_config.py` still asserts
+      the unknown-key `ConfigError`.
+- [x] No `.pt` file is staged. `.gitignore` carries `*.pt` and
+      `models/weights/`; `git status --porcelain` reports no `.pt`.
+- [x] `ruff` and `mypy` clean (`ruff check src tests scripts` → clean;
+      `mypy src` → 127 source files, no issues).
 
 **Out of scope:** implementing any reader; wiring a backend.
 
@@ -1422,10 +1433,8 @@ normative.
 
 ## T-FIX-27 — Port capture and readers into `src/wow_bot/perception/`
 
-**Status:** DONE* — implemented and verified in the working tree; not yet
-committed.
-**Depends on:** T-FIX-29 (also implemented in the working tree, not yet
-committed).
+**Status:** DONE (commit `d81ce69`)
+**Depends on:** T-FIX-29 (DONE, commit `d81ce69`)
 **Deliverables** (copied from `hamberger` then reshaped — plan doc §9):
 - `src/wow_bot/perception/capture.py`, `bars.py`, `combat.py`, `target.py`,
   `enemies.py`, `minimap.py`, `events.py`.
@@ -1483,11 +1492,14 @@ input outside `actuation/drivers/`), `core/state.py` (conflicting
 
 ## T-FIX-28 — Real state builder: readers → canonical `GameState`
 
-**Status:** PENDING (proposed)
+**Status:** DONE* — implemented and verified in the working tree; not yet
+committed.
 **Depends on:** T-FIX-27
 **Deliverables:**
 - `src/wow_bot/perception/builder.py`
-- Tests covering every unit/convention conversion below.
+- `tests/test_perception_builder.py` — one test per conversion row below,
+  plus the acceptance checks. 30 tests; no reader, Tesseract, YOLO, or
+  OpenCV is needed (all readers are faked).
 
 **Contract — all conversions explicit and tested:**
 
@@ -1505,15 +1517,61 @@ input outside `actuation/drivers/`), `core/state.py` (conflicting
 | unobserved fields | left `None`/empty; never fabricated |
 
 **Acceptance:**
-- [ ] Emitted `GameState` passes `__post_init__` and a
-      `to_dict`/`from_dict` round trip.
-- [ ] One test per row above.
-- [ ] A frame set with no target yields `target=None` rather than raising.
-- [ ] `perception_confidence` has an entry for every field actually observed.
-- [ ] No import of `wow_bot.lab` or `wow_bot.main`.
+- [x] Emitted `GameState` passes `__post_init__` and a
+      `to_dict`/`from_dict` round trip
+      (`test_emitted_game_state_passes_post_init_and_round_trip`).
+- [x] One test per row above — target HP, facing, bbox, events, `TargetInfo`,
+      `entities`/`enemies`, `kind`, `perception_confidence`, `timestamp`, and
+      unobserved fields each have a dedicated test.
+- [x] A frame set with no target yields `target=None` rather than raising
+      (`test_a_frame_with_no_target_yields_none_instead_of_raising`).
+- [x] `perception_confidence` has an entry for every field the frame set
+      actually observed. **Bounded to the measured-score channels**: YOLO
+      `conf`, template-match scores, and OCR confidence, exactly as the
+      contract row enumerates. The bar-fill and combat-edge channels expose no
+      confidence model, so they are absent rather than reported at a
+      fabricated `1.0` (see the deviation note below).
+- [x] No import of `wow_bot.lab` or `wow_bot.main`
+      (`test_builder_imports_nothing_from_lab_or_main`, an AST check).
 
 **Out of scope:** `player_z`, `position`, `distance_estimate`, `reaction` —
 these are T-FIX-30 channels.
+
+**Implementation notes / decisions:**
+- **The T-FIX-30 channels are injected, never derived.** `RealStateBuilder.build`
+  takes an :class:`InjectedObservations` carrying `position`, `player_z`,
+  `target_x`, `target_y`, `target_reaction`, and `target_distance_estimate`.
+  The builder performs no pose inference: the minimap arrow centre is screen
+  pixels, not world coordinates (plan doc finding F-1), so feeding it into
+  `position` would corrupt the world model. `position` is required because
+  `GameState.position` is non-Optional; every other injected field defaults to
+  `None` ("not observed").
+- **`facing` fails loud when unobserved.** `GameState.facing` is a
+  non-Optional `float` and the minimap can legitimately have no arrow match
+  yet. The builder raises `BuilderIncompleteError` naming `facing` rather than
+  emitting a fabricated zero heading, which ADR-001 explicitly forbids.
+- **Per-entity distance is injected and omission is the honest absence.**
+  `EnemyInfo.distance_estimate` is non-Optional and no T-FIX-27 reader observes
+  it (plan doc §3.2). A caller-supplied `EntityDistance` callable provides it;
+  a detection whose distance is unobserved is **omitted**, exactly as an
+  invalid `kind` is, never defaulted to `0.0`.
+- **Confidence-map deviation, recorded rather than hidden.** The acceptance
+  says "an entry for every field the frame set actually observed". The builder
+  emits entries only for fields whose channel produced a measured score
+  (`facing`, `target.name`, `target.hp_pct`, `entities.<i>.bbox`,
+  `entities.<i>.kind`). Recording `hp_pct`/`mana_pct`/`in_combat` would
+  require inventing a `1.0`, which ADR-002 Decision 4's "absence means not
+  attempted, low confidence means seen but uncertain" semantics does not
+  permit. This is the same class of bounded divergence as T-FIX-23's
+  five-vs-four channel rows; T-FIX-22 owns the eventual confidence contract.
+- **`event_from_candidate` accepts both shapes.** The T-FIX-27 reader emits
+  `EventCandidate`; the `hamberger` original emitted a
+  `{"type", "text", "source"}` mapping. Both are converted, and both are
+  tested, so plan doc §3.1 trap 6 has coverage whichever the caller passes.
+- **The degrees→radians site is not duplicated.** The builder consumes
+  `MinimapReading.facing_radians`; `degrees_to_facing_radians` remains the
+  single conversion site, and a test asserts `facing` equals that function's
+  output and is not the raw degree value.
 
 ---
 
@@ -1834,3 +1892,38 @@ modified.
   rose from one of eight to four. `tests/test_perception_derivation.py` is
   new; one stale assertion in `tests/test_perception_adapter.py` was
   corrected (see T-FIX-21 notes).
+- **T-FIX-29** — DONE (commit `d81ce69`). The base dependencies (`mss`,
+  `opencv-python-headless`, `pytesseract`) and the optional `yolo` extra
+  (`ultralytics`, `torch`), the `*.pt` / `models/weights/` ignore entries, the
+  three committed template PNGs under `models/`, and the guarded imports in
+  `perception/deps.py` are all in the tree. The §6.3 keys are documented in
+  `config/lab.example.toml` as comments (the frozen lab `Config` rejects
+  unknown keys) with the authoritative copy in
+  `config/perception.example.toml`. Full suite at that commit:
+  `1 failed, 2385 passed, 7 skipped, 1 xfailed`; the one failure is the
+  pre-existing spectral gate owned by T-FIX-10.
+- **T-FIX-27** — DONE (commit `d81ce69`). Capture plus the seven readers
+  (`bars`, `combat`, `target`, `enemies`, `events`, `minimap`, `capture`),
+  with per-channel throttles, injected clocks, config-driven paths, and the
+  single degrees→radians site (`minimap.degrees_to_facing_radians`). No reader
+  owns a global capture singleton and no reader imports OS input.
+- **T-FIX-28** — DONE* (working tree; not yet committed). New
+  `perception/builder.py` composes one frame through the readers into the
+  canonical `GameState` and resolves every unit mismatch in one place:
+  target HP `/100.0`, corner-pair → origin+size bbox, `EventCandidate`/mapping
+  → `Event` with the frame's monotonic timestamp, and `kind` mapped onto
+  `VALID_NODE_KINDS` or the entity omitted. `facing` is consumed from the
+  existing single conversion site, and an unobserved `facing` raises
+  `BuilderIncompleteError` rather than fabricating a zero heading. The
+  T-FIX-30 channels (`position`, `player_z`, `target_x`, `target_y`,
+  `target_reaction`, `target_distance_estimate`) are injected, never derived.
+  `tests/test_perception_builder.py` adds 30 tests, one per conversion row
+  plus the acceptance checks. `perception_confidence` is bounded to the
+  measured-score channels (see the T-FIX-28 deviation note). `ruff` and
+  `mypy` clean; `tests/test_perception_builder.py`,
+  `tests/test_perception_adapter.py`, and `tests/test_perception_derivation.py`
+  report `83 passed, 1 xfailed`.
+
+This revision also re-synchronises the tier table with the task sections:
+T-FIX-27 and T-FIX-29 were recorded as `DONE*`/`PROPOSED` after they had in
+fact been committed in `d81ce69`, and are now `DONE`.
