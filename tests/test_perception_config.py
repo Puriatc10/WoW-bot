@@ -40,6 +40,17 @@ def test_example_loads_without_touching_disk_assets() -> None:
     assert config.target_ocr_confirm_thresh == 0.85
     assert config.calibrated_resolution == (1920, 1080)
     assert len(config.known_enemies) >= 1
+    # T-FIX-30 channels.
+    assert config.pose_coordinate_roi == (1720, 40, 180, 24)
+    assert config.pose_min_confidence == 0.6
+    assert config.reaction_nameplate_roi == (560, 300, 800, 40)
+    assert config.reaction_min_pixels == 12
+    assert config.reaction_dominance_thresh == 0.6
+    assert config.proximity_reference_width_px == 120.0
+    assert config.proximity_reference_distance_yd == 10.0
+    assert config.proximity_min_confidence == 0.5
+    assert config.pose_sampling_hz == 1.0
+    assert config.reaction_sampling_hz == float("inf")
 
 
 def test_config_is_frozen() -> None:
@@ -86,6 +97,30 @@ def test_bad_roi_and_thresh_raise() -> None:
     data = _example_dict()
     data["enemies"]["confidence"] = 1.5  # type: ignore[index]
     with pytest.raises(PerceptionConfigError, match="confidence"):
+        load_perception_config_from_dict(data)  # type: ignore[arg-type]
+
+
+def test_bad_t_fix_30_channel_values_raise() -> None:
+    data = _example_dict()
+    data["pose"]["min_confidence"] = 1.5  # type: ignore[index]
+    with pytest.raises(PerceptionConfigError, match=r"\[pose\].min_confidence"):
+        load_perception_config_from_dict(data)  # type: ignore[arg-type]
+
+    data = _example_dict()
+    data["reaction"]["min_pixels"] = 0  # type: ignore[index]
+    with pytest.raises(PerceptionConfigError, match=r"\[reaction\].min_pixels"):
+        load_perception_config_from_dict(data)  # type: ignore[arg-type]
+
+    data = _example_dict()
+    data["proximity"]["reference_width_px"] = 0.0  # type: ignore[index]
+    with pytest.raises(PerceptionConfigError, match=r"\[proximity\].reference_width_px"):
+        load_perception_config_from_dict(data)  # type: ignore[arg-type]
+
+
+def test_unknown_t_fix_30_channel_key_raises() -> None:
+    data = _example_dict()
+    data["proximity"]["bogus"] = 1  # type: ignore[index]
+    with pytest.raises(PerceptionConfigError, match="Unknown key"):
         load_perception_config_from_dict(data)  # type: ignore[arg-type]
 
 

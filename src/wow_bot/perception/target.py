@@ -64,12 +64,19 @@ class TargetReading:
     meaningful when ``name`` is not ``None``. ``frame_confidence`` is the
     template-match score; ``ocr_confidence`` is set only on reads that
     ran OCR, and is ``None`` on locked frames served from the cache.
+
+    ``bar_width_px`` is the observed HP-bar pixel width and is ``None`` when
+    the bar's right edge was not actually seen (the HP fraction keeps working
+    through the reader's fallback, but a fallback width is not a measurement).
+    It is the T-FIX-30 distance channel's input: see
+    :mod:`wow_bot.perception.proximity`.
     """
 
     name: str | None
     hp_pct: int
     frame_confidence: float
     ocr_confidence: float | None = None
+    bar_width_px: int | None = None
 
     @property
     def found(self) -> bool:
@@ -351,8 +358,16 @@ class TargetReader:
     # ------------------------------------------------------------------
     # HP
     # ------------------------------------------------------------------
-    def _extract_hp(self, frame: FrameLike, name_position: tuple[int, int]) -> float:
-        """Return the target HP ratio in ``[0, 1]`` from the bar below the name."""
+    def _extract_hp(
+        self, frame: FrameLike, name_position: tuple[int, int]
+    ) -> tuple[float, int | None]:
+        """Return the target HP ratio in ``[0, 1]`` and the observed bar width.
+
+        The width is ``None`` when the bar's right edge was not observed: the
+        fallback below keeps the HP fraction usable, but a fallback edge is
+        not a measurement, and the T-FIX-30 distance channel must not treat it
+        as one (ADR-003 Decision 3).
+        """
         template_h, template_w = self._name_template.shape[:2]
         x, y = name_position
         height, width = frame.shape[:2]
@@ -376,7 +391,7 @@ class TargetReader:
                 break
 
         if left_x is None or left_y is None:
-            return 0.0
+            return 0.0, None
 
         right_x: int | None = None
         limit = min(left_x + _HP_BAR_MAX_WIDTH_PX, width)
@@ -385,6 +400,7 @@ class TargetReader:
             if self._is_golden(int(b), int(g), int(r)):
                 right_x = scan_x
                 break
+        measured_right_edge = right_x is not None
         if right_x is None:
             right_x = min(left_x + template_w + 30, width - 1)
 
@@ -396,9 +412,10 @@ class TargetReader:
 
         total = right_x - left_x
         if total <= 0:
-            return 0.0
+            return 0.0, None
         filled = last_green_x - left_x
-        return min(max(filled / total, 0.0), 1.0)
+        ratio = min(max(filled / total, 0.0), 1.0)
+        return ratio, (total if measured_right_edge else None)
 
     # ------------------------------------------------------------------
     # main entry point
@@ -455,12 +472,13 @@ class TargetReader:
             else:
                 ocr_confidence = self.last_ocr_confidence
 
-        hp_ratio = self._extract_hp(frame, position)
+        hp_ratio, bar_width = self._extract_hp(frame, position)
         return TargetReading(
             name=name,
             hp_pct=round(hp_ratio * 100),
             frame_confidence=lock_confidence,
             ocr_confidence=ocr_confidence,
+            bar_width_px=bar_width,
         )
 
     def _search_new(self, frame: FrameLike) -> TargetReading:
@@ -491,12 +509,13 @@ class TargetReader:
             ocr_confidence = self.last_ocr_confidence
             name = self.last_name
 
-        hp_ratio = self._extract_hp(frame, position)
+        hp_ratio, bar_width = self._extract_hp(frame, position)
         return TargetReading(
             name=name,
             hp_pct=round(hp_ratio * 100),
             frame_confidence=confidence,
             ocr_confidence=ocr_confidence,
+            bar_width_px=bar_width,
         )
 
     def _break_lock(self) -> None:

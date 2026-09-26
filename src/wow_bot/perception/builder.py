@@ -47,7 +47,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from wow_bot.perception.bars import BarReader
@@ -96,6 +96,12 @@ class InjectedObservations:
     is screen pixels, not world coordinates (plan doc finding F-1), so
     feeding it in would corrupt the world model. Every other field defaults
     to ``None``, meaning "not observed".
+
+    ``confidence`` carries the measured scores of the injected channels, so
+    their confidence semantics reach ``GameState.perception_confidence``
+    instead of being discarded at the injection boundary. It is merged with
+    :meth:`dict.setdefault`, so a score this builder measured itself for one
+    of its own channels always wins over an injected one.
     """
 
     position: tuple[float, float]
@@ -104,6 +110,7 @@ class InjectedObservations:
     target_y: float | None = None
     target_reaction: str | None = None
     target_distance_estimate: float | None = None
+    confidence: Mapping[str, float] = field(default_factory=dict)
 
 
 def target_hp_fraction(hp_pct: int) -> float:
@@ -279,6 +286,11 @@ class RealStateBuilder:
                 frame, now=timestamp, tesseract_cmd=self._tesseract_cmd
             )
             events = [event_from_candidate(candidate, timestamp) for candidate in candidates]
+
+        # Injected channel scores join the map, but never overwrite a score
+        # this builder measured for one of its own channels.
+        for key, value in injected.confidence.items():
+            confidence.setdefault(key, float(value))
 
         return GameState(
             timestamp=timestamp,

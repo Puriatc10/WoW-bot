@@ -39,6 +39,14 @@ spectral gate above. `tests/test_perception_adapter.py`,
 `tests/test_perception_derivation.py`, and `tests/test_perception_builder.py`
 together report `83 passed, 1 xfailed`.
 
+**Latest full-suite result with T-FIX-30 in the working tree:**
+`1 failed, 2485 passed, 7 skipped, 1 xfailed`. The single failure is still the
+spectral gate above; T-FIX-30 adds 70 passing tests across
+`tests/test_perception_pose.py`, `tests/test_perception_reaction.py`,
+`tests/test_perception_proximity.py`, `tests/test_perception_observations.py`,
+and the bar-width cases appended to `tests/test_perception_target.py`.
+`ruff check src tests scripts` and `mypy src` are clean.
+
 ---
 
 ## Status legend
@@ -119,7 +127,7 @@ Tier names are unchanged from the original revision of this document.
 | 8 — Real perception port (from `hamberger`) | T-FIX-29 | Dependencies, assets, perception configuration | DONE |
 | 8 | T-FIX-27 | Port capture and readers | DONE |
 | 8 | T-FIX-28 | Real state builder → canonical `GameState` | DONE* |
-| 8 | T-FIX-30 | World pose, target distance, reaction channels | PROPOSED |
+| 8 | T-FIX-30 | World pose, target distance, reaction channels | DONE* |
 | 8 | T-FIX-31 | UI panel channels (implements T-FIX-23) | PROPOSED |
 | 8 | T-FIX-32 | `RealPerceptionBackend`, gated | PROPOSED |
 
@@ -1577,7 +1585,7 @@ these are T-FIX-30 channels.
 
 ## T-FIX-30 — World pose, target distance, and reaction channels
 
-**Status:** PENDING (proposed)
+**Status:** DONE* (acceptance verified in the working tree; not yet committed)
 **Depends on:** T-FIX-28, T-FIX-23
 **Critical path:** without `player_x`/`player_y`, seven of the eight views
 stay blocked regardless of reader quality (plan doc finding F-1).
@@ -1596,19 +1604,81 @@ stay blocked regardless of reader quality (plan doc finding F-1).
 from actuation (needs T-FIX-08/T-FIX-20, drifts); (C) minimap scroll offset
 against a map anchor (highest effort).
 
+**Decision taken: (A).** Recorded in
+`docs/decisions/ADR-003-world-pose-channel.md` and restated in the
+`docs/PERCEPTION.md` §2.1 World pose row. B is rejected because it is an
+integration, not an observation, and never self-corrects; C is rejected as
+strictly more work for a precision the `5.0`-unit world-sync radius does not
+need; "minimap pixels as world units" stays rejected (plan doc option D).
+
 **Contract:** the method states its units and error characteristics; the
 adapter and `world/sync` see world units only; a low-confidence pose leaves
 `position=None`, because a wrong pose writes a wrong node into the world
 model.
 
 **Acceptance:**
-- [ ] Three new `docs/PERCEPTION.md` rows, each with all four attributes.
-- [ ] `WorldSyncView` projects once pose and `player_z` are supplied.
-- [ ] `ReactiveView` projects once `distance_estimate` exists (so
-      `target_in_range` derives).
-- [ ] Low confidence leaves `position=None` and creates no world node.
+- [x] Three new `docs/PERCEPTION.md` rows, each with all four attributes.
+- [x] `WorldSyncView` projects once pose and `player_z` are supplied
+      (`test_world_sync_view_projects_once_pose_and_player_z_are_supplied`;
+      the `player_z` is injected, because the chosen channel observes no
+      height — see the implementation notes).
+- [x] `ReactiveView` projects once `distance_estimate` exists (so
+      `target_in_range` derives)
+      (`test_reactive_view_projects_once_distance_estimate_exists`).
+- [x] Low confidence leaves `position=None` and creates no world node
+      (`test_low_confidence_pose_creates_no_world_node`).
 
 **Out of scope:** the UI panel channels (T-FIX-31); navigation.
+
+**Implementation notes / decisions:**
+- **World pose is channel A.** `src/wow_bot/perception/pose.py` OCRs an
+  addon coordinate frame with Tesseract's word-confidence API and parses
+  exactly two unambiguous decimal numbers. `position` is emitted in world
+  units with no conversion. The minimap arrow is explicitly not this channel
+  (plan doc finding F-1). Comma-decimal locales are rejected to `None` rather
+  than guessed at; that limitation is recorded in ADR-003 and in the
+  `docs/PERCEPTION.md` row.
+- **`player_z` is permanently `None`.** The coordinate frame observes two
+  dimensions. `WorldSyncView` and `StrategistView` therefore stay blocked
+  **by design**; the acceptance test proves the pose channel by injecting a
+  `player_z` from outside the channel, which is the only way those views
+  project today (ADR-003 Decision 2).
+- **Target distance reuses an existing measurement.** T-FIX-27's
+  `TargetReader._extract_hp` already finds both ends of the nameplate HP bar;
+  the observed width is now exposed additively as
+  `TargetReading.bar_width_px`, and
+  `src/wow_bot/perception/proximity.py` is the single site that converts a
+  pixel width to yards (inverse-proportional model calibrated by
+  `[proximity].reference_width_px` / `reference_distance_yd`). A width whose
+  right edge was *not* observed is `None`: the reader's right-edge fallback
+  keeps the HP fraction working but is not a measurement. The HP-fraction
+  behaviour is unchanged and covered by new tests in
+  `tests/test_perception_target.py`.
+- **Target reaction is a new colour channel.** `src/wow_bot/perception/`
+  `reaction.py` classifies `[reaction].nameplate_roi` into
+  hostile/neutral/friendly using its own predicates (a text label is a
+  different question from an HP-bar fill), requires `min_pixels` coloured
+  pixels and a `dominance_thresh` share, and otherwise emits `None` — never a
+  default, because `TargetInfo.__post_init__` already rejects an empty
+  reaction.
+- **`target_x` / `target_y` stay unobserved.** Deriving them needs
+  pose + bearing + distance, a second-order inference with no validated error
+  model. Nothing here fabricates them (ADR-003 Decision 5).
+- **One composition site.** `src/wow_bot/perception/observations.py` turns
+  the three readers into `InjectedObservations`, owns the "which values are
+  trustworthy" policy, and raises `BuilderIncompleteError` when no confident
+  pose exists — so a bad pose produces no `GameState` at all and the world
+  sync layer is never reached.
+- **Confidence reaches the state.** `InjectedObservations` gains an optional
+  `confidence` mapping (additive, empty by default) which the T-FIX-28
+  builder merges with `setdefault`, so `position`, `target.reaction`, and
+  `target.distance_estimate` scores appear in
+  `GameState.perception_confidence` and a measured score is never overwritten
+  by an injected one.
+- **Measured, not asserted.** Every value above is confidence-gated and
+  absent by default. Precision/recall for the three channels is recorded as
+  still unmeasurable in `docs/PERCEPTION.md` §6, because the frozen frame
+  corpus does not exist in the repository — not faked.
 
 ---
 

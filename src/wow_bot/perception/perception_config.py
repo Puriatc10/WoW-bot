@@ -7,12 +7,14 @@ type — the same pattern as farm profiles (``farm/profile.py``) and
 rotations (``combat/rotation.py`` + ``scripts/lab/full_soak.py``).
 
 Every hardcoded value from ``docs/lab_phase/HAMBERGER_PORT_PLAN.md``
-§6.3 becomes a validated key here. The loader only validates *shape*
-(types, ranges, unknown keys); it never checks that weight/template
-files exist or that binaries are installed, so MOCK_MODE and CI load
-the example without Tesseract, YOLO weights, or template PNGs present.
-Existence is enforced fail-closed at reader construction time by the
-future T-FIX-27 readers via ``perception.deps`` guards.
+§6.3 becomes a validated key here, and the T-FIX-30 channels
+(``[pose]``, ``[reaction]``, ``[proximity]``) add theirs under the same
+rules. The loader only validates *shape* (types, ranges, unknown keys); it
+never checks that weight/template files exist or that binaries are
+installed, so MOCK_MODE and CI load the example without Tesseract, YOLO
+weights, or template PNGs present. Existence is enforced fail-closed at
+reader construction time by the T-FIX-27 readers via ``perception.deps``
+guards.
 """
 
 from __future__ import annotations
@@ -49,6 +51,9 @@ ALLOWED_TOP_LEVEL_KEYS: frozenset[str] = frozenset(
         "enemies",
         "events",
         "minimap",
+        "pose",
+        "reaction",
+        "proximity",
     }
 )
 
@@ -124,6 +129,35 @@ ALLOWED_MINIMAP_KEYS: frozenset[str] = frozenset(
     }
 )
 
+#: T-FIX-30 world-pose channel: OCR of an addon coordinate frame (ADR-003).
+ALLOWED_POSE_KEYS: frozenset[str] = frozenset(
+    {
+        "coordinate_roi",
+        "min_confidence",
+        "sampling_hz",
+    }
+)
+
+#: T-FIX-30 target-reaction channel: nameplate text colour.
+ALLOWED_REACTION_KEYS: frozenset[str] = frozenset(
+    {
+        "nameplate_roi",
+        "min_pixels",
+        "dominance_thresh",
+        "sampling_hz",
+    }
+)
+
+#: T-FIX-30 target-distance channel: nameplate HP-bar width -> yards.
+ALLOWED_PROXIMITY_KEYS: frozenset[str] = frozenset(
+    {
+        "reference_width_px",
+        "reference_distance_yd",
+        "min_confidence",
+        "sampling_hz",
+    }
+)
+
 
 @dataclass(frozen=True)
 class PerceptionConfig:
@@ -161,6 +195,17 @@ class PerceptionConfig:
     minimap_smoothing_frames: int
     minimap_sampling_hz: float
     minimap_match_thresh: float
+    pose_coordinate_roi: tuple[int, int, int, int]
+    pose_min_confidence: float
+    pose_sampling_hz: float
+    reaction_nameplate_roi: tuple[int, int, int, int]
+    reaction_min_pixels: int
+    reaction_dominance_thresh: float
+    reaction_sampling_hz: float
+    proximity_reference_width_px: float
+    proximity_reference_distance_yd: float
+    proximity_min_confidence: float
+    proximity_sampling_hz: float
 
 
 def _require_section(data: dict[str, Any], name: str) -> dict[str, Any]:
@@ -224,6 +269,15 @@ def _as_unit_float(value: Any, name: str) -> float:
     return result
 
 
+def _as_positive_float(value: Any, name: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise PerceptionConfigError(f"{name} must be a number")
+    result = float(value)
+    if result <= 0.0:
+        raise PerceptionConfigError(f"{name} must be > 0")
+    return result
+
+
 def _as_non_empty_str(value: Any, name: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise PerceptionConfigError(f"{name} must be a non-empty string")
@@ -263,6 +317,9 @@ def load_perception_config_from_dict(data: dict[str, Any]) -> PerceptionConfig:
     enemies = _require_section(data, "enemies")
     events = _require_section(data, "events")
     minimap = _require_section(data, "minimap")
+    pose = _require_section(data, "pose")
+    reaction = _require_section(data, "reaction")
+    proximity = _require_section(data, "proximity")
 
     _check_keys(perception, "perception", ALLOWED_PERCEPTION_KEYS)
     _check_keys(capture, "capture", ALLOWED_CAPTURE_KEYS)
@@ -272,6 +329,9 @@ def load_perception_config_from_dict(data: dict[str, Any]) -> PerceptionConfig:
     _check_keys(enemies, "enemies", ALLOWED_ENEMIES_KEYS)
     _check_keys(events, "events", ALLOWED_EVENTS_KEYS)
     _check_keys(minimap, "minimap", ALLOWED_MINIMAP_KEYS)
+    _check_keys(pose, "pose", ALLOWED_POSE_KEYS)
+    _check_keys(reaction, "reaction", ALLOWED_REACTION_KEYS)
+    _check_keys(proximity, "proximity", ALLOWED_PROXIMITY_KEYS)
 
     version = perception.get("schema_version")
     if (
@@ -351,6 +411,38 @@ def load_perception_config_from_dict(data: dict[str, Any]) -> PerceptionConfig:
         ),
         minimap_match_thresh=_as_unit_float(
             minimap.get("match_thresh"), "[minimap].match_thresh"
+        ),
+        pose_coordinate_roi=_as_roi(
+            pose.get("coordinate_roi"), "[pose].coordinate_roi"
+        ),
+        pose_min_confidence=_as_unit_float(
+            pose.get("min_confidence"), "[pose].min_confidence"
+        ),
+        pose_sampling_hz=_as_sampling_hz(pose.get("sampling_hz"), "[pose].sampling_hz"),
+        reaction_nameplate_roi=_as_roi(
+            reaction.get("nameplate_roi"), "[reaction].nameplate_roi"
+        ),
+        reaction_min_pixels=_as_positive_int(
+            reaction.get("min_pixels"), "[reaction].min_pixels"
+        ),
+        reaction_dominance_thresh=_as_unit_float(
+            reaction.get("dominance_thresh"), "[reaction].dominance_thresh"
+        ),
+        reaction_sampling_hz=_as_sampling_hz(
+            reaction.get("sampling_hz"), "[reaction].sampling_hz"
+        ),
+        proximity_reference_width_px=_as_positive_float(
+            proximity.get("reference_width_px"), "[proximity].reference_width_px"
+        ),
+        proximity_reference_distance_yd=_as_positive_float(
+            proximity.get("reference_distance_yd"),
+            "[proximity].reference_distance_yd",
+        ),
+        proximity_min_confidence=_as_unit_float(
+            proximity.get("min_confidence"), "[proximity].min_confidence"
+        ),
+        proximity_sampling_hz=_as_sampling_hz(
+            proximity.get("sampling_hz"), "[proximity].sampling_hz"
         ),
     )
 

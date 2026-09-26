@@ -93,3 +93,39 @@ smoothing_frames = 5
 sampling_hz = 5.0
 # Minimum template-match score for accepting the arrow
 match_thresh = 0.55
+
+# T-FIX-30 world-pose channel: OCR of an on-screen addon coordinate frame.
+# Decision A of HAMBERGER_PORT_PLAN §F-1, recorded in ADR-003. The minimap
+# arrow is NOT this channel: it returns screen pixels, not world coordinates.
+[pose]
+# Region of interest of the addon coordinate text (x, y, width, height)
+coordinate_roi = [1720, 40, 180, 24]
+# Minimum mean OCR word confidence for a pose to be emitted
+min_confidence = 0.6
+# Sampling budget in Hz; OCR is throttled and cached between samples (§6.6)
+sampling_hz = 1.0
+
+# T-FIX-30 target-reaction channel: nameplate text colour classifies the
+# reaction (red hostile / yellow neutral / green friendly).
+[reaction]
+# Region of interest holding the nameplate text (x, y, width, height)
+nameplate_roi = [560, 300, 800, 40]
+# Minimum coloured pixels before a reaction is attempted
+min_pixels = 12
+# Minimum share of the coloured pixels the winning reaction must hold
+dominance_thresh = 0.6
+# Sampling budget in Hz; 'inf' means classify on every frame (cheap channel)
+sampling_hz = inf
+
+# T-FIX-30 target-distance channel: nameplate HP-bar width -> yards.
+# Inverse-proportional model: distance = reference_distance_yd *
+# reference_width_px / observed_width_px. Calibration constants, not guesses.
+[proximity]
+# Nameplate HP-bar pixel width observed at reference_distance_yd
+reference_width_px = 120.0
+# Distance in yards at which the nameplate bar renders reference_width_px wide
+reference_distance_yd = 10.0
+# Minimum nameplate template-match score for a distance to be emitted
+min_confidence = 0.5
+# Sampling budget in Hz; 'inf' means convert on every frame (cheap channel)
+sampling_hz = inf

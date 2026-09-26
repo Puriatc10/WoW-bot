@@ -458,3 +458,53 @@ def test_tesseract_cmd_assignment_lives_only_in_the_configure_method() -> None:
         )
     ]
     assert module_level == []
+
+
+# ----------------------------------------------------------------------
+# T-FIX-30 — the observed HP-bar width is the distance channel's input
+# ----------------------------------------------------------------------
+def frame_without_golden_edge(fill: float = 1.0) -> np.ndarray:
+    """Nameplate with a green HP bar whose right edge is *not* observed."""
+    frame = np.zeros((FRAME_H, FRAME_W, 3), dtype=np.uint8)
+    frame[:, :] = (18, 18, 18)
+    x, y = NAMEPLATE_XY
+    paint_nameplate(frame, NAMEPLATE_XY)
+    bar_y = y + TEMPLATE_H + 5
+    left = x + 20
+    filled = round(TEMPLATE_W * fill)
+    if filled > 0:
+        frame[bar_y, left : left + filled] = GREEN
+    return frame
+
+
+def test_observed_bar_width_is_reported(
+    template_path: Path, frame_template_path: Path, tmp_path: Path, tesseract: FakeTesseractModule
+) -> None:
+    reader = make_reader(template_path, frame_template_path, tmp_path)
+    reading = reader.read(nameplate_frame(), tesseract_cmd="C:/fake/tesseract.exe")
+    # Left edge at x+20, golden right edge at left+TEMPLATE_W-1.
+    assert reading.bar_width_px == TEMPLATE_W - 1
+
+
+def test_unobserved_right_edge_reports_no_width(
+    template_path: Path, frame_template_path: Path, tmp_path: Path, tesseract: FakeTesseractModule
+) -> None:
+    """The HP fraction keeps its fallback; the *measurement* stays ``None``."""
+    reader = make_reader(template_path, frame_template_path, tmp_path)
+    reading = reader.read(
+        frame_without_golden_edge(), tesseract_cmd="C:/fake/tesseract.exe"
+    )
+    assert reading.name == "Defias Thug"
+    assert reading.hp_pct > 0, "the fallback still yields an HP fraction"
+    assert reading.bar_width_px is None, "a fallback edge is not a measurement"
+
+
+def test_no_bar_at_all_reports_no_width(
+    template_path: Path, frame_template_path: Path, tmp_path: Path, tesseract: FakeTesseractModule
+) -> None:
+    reader = make_reader(template_path, frame_template_path, tmp_path)
+    reading = reader.read(
+        nameplate_frame(hp_bar=False), tesseract_cmd="C:/fake/tesseract.exe"
+    )
+    assert reading.hp_pct == 0
+    assert reading.bar_width_px is None

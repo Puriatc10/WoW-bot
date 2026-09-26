@@ -540,7 +540,10 @@ actuation.
 #### T-FIX-30 — World pose, target distance, and reaction channels
 
 **Depends on:** T-FIX-28, T-FIX-23
-**Status:** PENDING (proposed)
+**Status:** DONE* — decision taken: **A**, recorded in
+`docs/decisions/ADR-003-world-pose-channel.md`. See the task entry in
+`docs/lab_phase/PRE_REAL_PERCEPTION_FIX_ROADMAP.md` for the implementation
+notes and acceptance evidence.
 **Why this is the critical path:** without `player_x`/`player_y`, seven of
 the eight views stay blocked regardless of how good the readers are (F-1).
 
