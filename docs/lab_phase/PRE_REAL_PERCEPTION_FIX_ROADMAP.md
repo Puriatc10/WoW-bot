@@ -115,6 +115,12 @@ Tier names are unchanged from the original revision of this document.
 | 6 | T-FIX-19 | Percentile proxy semantics documentation | PENDING |
 | 7 — Deferred / unowned gaps | T-FIX-25 | Strategist plan refresh and lifetime | PROPOSED |
 | 7 | T-FIX-26 | Farm profile as an executed cycle plan | PROPOSED |
+| 8 — Real perception port (from `hamberger`) | T-FIX-29 | Dependencies, assets, perception configuration | PROPOSED |
+| 8 | T-FIX-27 | Port capture and readers | PROPOSED |
+| 8 | T-FIX-28 | Real state builder → canonical `GameState` | PROPOSED |
+| 8 | T-FIX-30 | World pose, target distance, reaction channels | PROPOSED |
+| 8 | T-FIX-31 | UI panel channels (implements T-FIX-23) | PROPOSED |
+| 8 | T-FIX-32 | `RealPerceptionBackend`, gated | PROPOSED |
 
 ### Dependency graph
 
@@ -133,6 +139,11 @@ T-FIX-04 ──┬──> T-FIX-05 ──┬──> T-FIX-08
 T-FIX-09 ──> T-FIX-10
 T-FIX-12 ──> T-FIX-13
 T-FIX-15 ──> T-FIX-17 ──> T-FIX-26
+
+T-FIX-29 ──> T-FIX-27 ──> T-FIX-28 ─┬─> T-FIX-30 ──┐
+                │                    │               ├─> T-FIX-32
+                └──> T-FIX-31 ───────┘               │
+                       (T-FIX-32 also needs T-FIX-04, T-FIX-20, T-FIX-22)
 
 Independent: T-FIX-11, T-FIX-14, T-FIX-18, T-FIX-19
 ```
@@ -1369,6 +1380,211 @@ schema changes beyond additive.
 
 ---
 
+# Tier 8 — Real perception port (from `hamberger`)
+
+Source branch `hamberger@9b968a4` is an **orphan root commit with no merge
+base** to `master`, so these tasks port individual files rather than merging
+the branch. Full analysis, gap tables, findings and the extraction procedure
+are in `docs/lab_phase/HAMBERGER_PORT_PLAN.md`; the definitions below are
+normative.
+
+## T-FIX-29 — Dependencies, assets, and perception configuration
+
+**Status:** PENDING (proposed)
+**Depends on:** none
+**Deliverables:**
+- `pyproject.toml` — `mss`, `opencv-python-headless`, `pytesseract`; the YOLO
+  stack (`ultralytics`/`torch`) behind an optional extra, not a base
+  dependency.
+- `config/lab.example.toml` — every key from plan doc §6.3, each commented.
+- `.gitignore` — `*.pt`.
+- `models/*.png` — the three template PNGs from `hamberger`, committed.
+- Guarded imports so MOCK_MODE needs neither Tesseract nor YOLO weights.
+
+**Contract:**
+- Missing optional dependencies raise `ImportError`/`ConfigError` with a
+  named remedy, never a silent pass.
+- Scanner configuration is injected; `tesseract_cmd` is set at construction
+  time, never at import time.
+- `ultralytics` must be pinned and verified to run offline; if it cannot,
+  the dependency is rejected rather than tolerated (plan doc R-6).
+
+**Acceptance:**
+- [ ] Full suite passes in MOCK_MODE with neither Tesseract nor YOLO installed.
+- [ ] Every new key is in `config/lab.example.toml` with a comment; an
+      unknown key still raises `ConfigError`.
+- [ ] No `.pt` file is staged.
+- [ ] `ruff` and `mypy` clean.
+
+**Out of scope:** implementing any reader; wiring a backend.
+
+---
+
+## T-FIX-27 — Port capture and readers into `src/wow_bot/perception/`
+
+**Status:** PENDING (proposed)
+**Depends on:** T-FIX-29
+**Deliverables** (copied from `hamberger` then reshaped — plan doc §9):
+- `src/wow_bot/perception/capture.py`, `bars.py`, `combat.py`, `target.py`,
+  `enemies.py`, `minimap.py`, `events.py`.
+- Tests synthesising frames with NumPy.
+
+**Not ported:** `core/action.py` (`pydirectinput` — AGENTS.md §7 forbids OS
+input outside `actuation/drivers/`), `core/state.py` (conflicting
+`GameState`), `main.py`, `.gitignore`, `datasets/`, `runs/`, `*.pt`.
+
+**Contract:**
+- Every reader is frame-in/frame-out; no reader owns a global capture
+  singleton. Composition happens in T-FIX-28.
+- All §6.3 constants come from injected config; no hardcoded absolute path
+  and no module-level `pytesseract` assignment remains.
+- **Frame budget:** cheap channels (bars, combat edges) run every frame; OCR
+  and YOLO run on their own throttled schedule with cached results, so the
+  20 Hz capture budget is met (plan doc §6.6).
+- Deterministic given identical frames: no `time.time()` inside readers; the
+  combat cooldown latch takes the clock as a parameter.
+- YOLO import is lazy and optional.
+
+**Acceptance:**
+- [ ] Per-reader unit tests over synthesised frames; none needs a live
+      client, Tesseract, or YOLO weights.
+- [ ] `BarReader` returns a ratio in `[0,1]` for a synthetic bar of known fill.
+- [ ] `CombatDetector` returns `True` for a red edge strip and `False` for a
+      neutral one.
+- [ ] Degrees→radians conversion exists in exactly one location.
+- [ ] OCR calls per second are asserted to stay under the configured budget.
+- [ ] No hardcoded absolute path under `src/wow_bot/perception/`.
+
+**Out of scope:** building a `GameState`; wiring the runner; any actuation.
+
+---
+
+## T-FIX-28 — Real state builder: readers → canonical `GameState`
+
+**Status:** PENDING (proposed)
+**Depends on:** T-FIX-27
+**Deliverables:**
+- `src/wow_bot/perception/builder.py`
+- Tests covering every unit/convention conversion below.
+
+**Contract — all conversions explicit and tested:**
+
+| Conversion | Rule |
+|---|---|
+| target HP | `int 0..100` → fraction by `/100.0` |
+| facing | degrees → radians normalised to `[-π, π)`, in **one** place |
+| bbox | `(x1,y1,x2,y2)` → `(x, y, w, h)` |
+| events | dict → `Event(type, timestamp, data)` with the frame's monotonic timestamp |
+| `TargetInfo` | built only when all four fields are present, else `target=None`; never partial, or `__post_init__` raises mid-pipeline |
+| `entities`/`enemies` | one list, both populated from the same detections (ADR-002 Decision 3) |
+| `kind` | mapped to `VALID_NODE_KINDS`, or the entity is omitted, never defaulted |
+| `perception_confidence` | populated from YOLO `conf`, template-match scores, OCR confidence |
+| `timestamp` | monotonic clock, per `docs/PERCEPTION.md` §1 |
+| unobserved fields | left `None`/empty; never fabricated |
+
+**Acceptance:**
+- [ ] Emitted `GameState` passes `__post_init__` and a
+      `to_dict`/`from_dict` round trip.
+- [ ] One test per row above.
+- [ ] A frame set with no target yields `target=None` rather than raising.
+- [ ] `perception_confidence` has an entry for every field actually observed.
+- [ ] No import of `wow_bot.lab` or `wow_bot.main`.
+
+**Out of scope:** `player_z`, `position`, `distance_estimate`, `reaction` —
+these are T-FIX-30 channels.
+
+---
+
+## T-FIX-30 — World pose, target distance, and reaction channels
+
+**Status:** PENDING (proposed)
+**Depends on:** T-FIX-28, T-FIX-23
+**Critical path:** without `player_x`/`player_y`, seven of the eight views
+stay blocked regardless of reader quality (plan doc finding F-1).
+
+**Deliverables:**
+- `docs/PERCEPTION.md` §2.1 rows for **World pose**, **Target distance**, and
+  **Target reaction**, each with source channel, extraction method, accuracy
+  class, and confidence semantics.
+- The corresponding readers under `src/wow_bot/perception/`.
+- `player_z`: if the method cannot observe height, record `None` as the
+  permanent value and leave `WorldSyncView`/`StrategistView` blocked **by
+  design**. Do not invent a z.
+
+**Decision required before implementation** (record the choice in the row):
+(A) OCR an on-screen addon coordinate frame — recommended; (B) dead reckoning
+from actuation (needs T-FIX-08/T-FIX-20, drifts); (C) minimap scroll offset
+against a map anchor (highest effort).
+
+**Contract:** the method states its units and error characteristics; the
+adapter and `world/sync` see world units only; a low-confidence pose leaves
+`position=None`, because a wrong pose writes a wrong node into the world
+model.
+
+**Acceptance:**
+- [ ] Three new `docs/PERCEPTION.md` rows, each with all four attributes.
+- [ ] `WorldSyncView` projects once pose and `player_z` are supplied.
+- [ ] `ReactiveView` projects once `distance_estimate` exists (so
+      `target_in_range` derives).
+- [ ] Low confidence leaves `position=None` and creates no world node.
+
+**Out of scope:** the UI panel channels (T-FIX-31); navigation.
+
+---
+
+## T-FIX-31 — UI panel channels (implements the T-FIX-23 documentation)
+
+**Status:** PENDING (proposed)
+**Depends on:** T-FIX-27, T-FIX-23
+**Deliverables:** readers for Bag frame, XP bar, Character frame, Enemy cast
+bar, and Lootable-corpse indicator exactly as `docs/PERCEPTION.md` §2.1
+specifies, plus their calibration anchors.
+
+**Contract:** each reader obeys its documented confidence rule — below
+threshold the field is `None`, never partial. A partial `inventory_count`
+silently suppresses full-bag handling.
+
+**Acceptance:**
+- [ ] A synthesised-frame unit test per reader.
+- [ ] Below-threshold behaviour matches that channel's §2.1 rule.
+- [ ] The §6 precision/recall gate is measured against a corpus or recorded
+      as still unmeasurable — not faked.
+
+**Out of scope:** pose/distance (T-FIX-30); `resource_max` provenance
+(ADR-002 unresolved question 2).
+
+---
+
+## T-FIX-32 — `RealPerceptionBackend`, behind a config gate
+
+**Status:** PENDING (proposed)
+**Depends on:** T-FIX-28, T-FIX-04, T-FIX-20, T-FIX-22
+**Deliverables:**
+- `src/wow_bot/perception/real_backend.py` — `RealPerceptionBackend(
+  PerceptionBackend)`, composing capture → readers → builder, exposing
+  `async def snapshot() -> GameState`.
+- An integration test over a frozen frame corpus.
+
+**Contract:**
+- It is **never the configured default producer**; `MockPerception` remains
+  the producer in `MOCK_MODE` and `LAB_MODE`, so `LAB_PHASE_ROADMAP.md`
+  Global Rule 1 is not violated.
+- Stale or missing frames are explicit, never silently reused.
+- The fast loop is not blocked; T-FIX-20 owns scheduling.
+
+**Acceptance:**
+- [ ] `isinstance(RealPerceptionBackend(...), PerceptionBackend)` holds.
+- [ ] End-to-end integration test asserts the eight projection outcomes.
+- [ ] `MockPerception` is still the producer in both modes; no default config
+      selects the real backend.
+- [ ] Full suite green; `ruff` and `mypy` clean.
+
+**Out of scope:** enabling it. That is Phase 13, and requires amending
+`LAB_PHASE_ROADMAP.md` Global Rule 1 first — an operator decision recorded in
+plan doc §6.1.
+
+---
+
 # Task ID reconciliation
 
 `docs/decisions/ADR-002-gamestate-extension.md` §Decision 6 proposed task
@@ -1386,6 +1602,7 @@ document.
 | — | `T-FIX-20` | **New here.** The async perception port and scheduling design. ADR-002 does not assign it; the readiness review Q1/Q3/Q7 requires it. |
 | — | `T-FIX-25` | **New here.** Strategist plan refresh and lifetime. |
 | — | `T-FIX-26` | **New here.** Farm profile as an executed cycle plan. |
+| — | `T-FIX-27` … `T-FIX-32` | **New here.** The `hamberger` port. See `docs/lab_phase/HAMBERGER_PORT_PLAN.md`. `hamberger@9b968a4` is an **orphan root commit with no merge base**, so the work is a file port, not a branch merge. |
 
 Two corrections to ADR-002's presentation, neither of which changes its
 substance:
