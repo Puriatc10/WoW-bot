@@ -1422,8 +1422,10 @@ normative.
 
 ## T-FIX-27 — Port capture and readers into `src/wow_bot/perception/`
 
-**Status:** PENDING (proposed)
-**Depends on:** T-FIX-29
+**Status:** DONE* — implemented and verified in the working tree; not yet
+committed.
+**Depends on:** T-FIX-29 (also implemented in the working tree, not yet
+committed).
 **Deliverables** (copied from `hamberger` then reshaped — plan doc §9):
 - `src/wow_bot/perception/capture.py`, `bars.py`, `combat.py`, `target.py`,
   `enemies.py`, `minimap.py`, `events.py`.
@@ -1445,15 +1447,35 @@ input outside `actuation/drivers/`), `core/state.py` (conflicting
   combat cooldown latch takes the clock as a parameter.
 - YOLO import is lazy and optional.
 
+**Implementation notes (recorded as built):**
+- The frame budget is a per-channel `Throttle` (`capture.py`) whose `allow()`
+  is a pure predicate and whose `record()` commits a sample, so a channel
+  never consumes its budget on an early return. Each reader accepts
+  `sampling_hz` and an injected `clock` (default `time.monotonic`).
+- Six new config keys carry the budgets: `[bars]`, `[combat]`, `[target]`,
+  `[enemies]`, `[events]`, `[minimap]` each gained `sampling_hz`
+  (`inf` = every frame for the cheap channels). `[minimap].match_thresh` and
+  `[target].name_refresh_frames` were added for the same reason: the two
+  remaining hamberger magic numbers the port would otherwise hardcode.
+- `[target]`'s four thresholds are enforced, not decorative:
+  `max(match_thresh, ocr_thresh)` gates candidate search, `confirm_thresh`
+  gates taking the position lock, and `ocr_thresh`/`ocr_confirm_thresh`
+  gate OCR acceptance.
+- `EnemyDetector` no longer ports hamberger's `click_position`: it is
+  actuation, and AGENTS.md §7 keeps OS input out of this package.
+- `MinimapReading.position_px` is documented as **screen pixels**, never a
+  world pose (plan doc finding F-1); `degrees_to_facing_radians` is the
+  single degrees→radians site.
+
 **Acceptance:**
-- [ ] Per-reader unit tests over synthesised frames; none needs a live
+- [x] Per-reader unit tests over synthesised frames; none needs a live
       client, Tesseract, or YOLO weights.
-- [ ] `BarReader` returns a ratio in `[0,1]` for a synthetic bar of known fill.
-- [ ] `CombatDetector` returns `True` for a red edge strip and `False` for a
+- [x] `BarReader` returns a ratio in `[0,1]` for a synthetic bar of known fill.
+- [x] `CombatDetector` returns `True` for a red edge strip and `False` for a
       neutral one.
-- [ ] Degrees→radians conversion exists in exactly one location.
-- [ ] OCR calls per second are asserted to stay under the configured budget.
-- [ ] No hardcoded absolute path under `src/wow_bot/perception/`.
+- [x] Degrees→radians conversion exists in exactly one location.
+- [x] OCR calls per second are asserted to stay under the configured budget.
+- [x] No hardcoded absolute path under `src/wow_bot/perception/`.
 
 **Out of scope:** building a `GameState`; wiring the runner; any actuation.
 

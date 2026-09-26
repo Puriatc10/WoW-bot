@@ -11,6 +11,9 @@ reports/
 .mypy_cache/
 .ruff_cache/
 *.db
+# T-FIX-29: model weights are large binaries resolved from config, not tracked
+*.pt
+models/weights/
 runs/
 *.egg-info/
 config/lab.toml

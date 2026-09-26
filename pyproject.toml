@@ -14,6 +14,12 @@ dependencies = [
     "matplotlib>=3.9.0",
     "psutil>=6.0.0",
     "tzdata>=2024.1; sys_platform == 'win32'",
+    # T-FIX-29: real-perception capture and image processing. Imported only
+    # from wow_bot.perception behind perception/deps.py guards, so MOCK_MODE
+    # never loads them and tests do not require them at runtime.
+    "mss>=9.0.0",
+    "opencv-python-headless>=4.9.0",
+    "pytesseract>=0.3.10",
 ]
 
 [project.optional-dependencies]
@@ -23,6 +29,13 @@ dev = [
     "pytest-cov>=6.0.0",
     "ruff>=0.6.0",
     "mypy>=1.11.0",
+]
+# T-FIX-29: optional YOLO detector stack for the real enemy channel. Excluded
+# from the base install because it pulls torch (~2 GB) and MOCK_MODE never
+# uses it. Install with: uv sync --extra yolo
+yolo = [
+    "ultralytics>=8.2.0",
+    "torch>=2.2.0",
 ]
 
 [tool.pytest.ini_options]

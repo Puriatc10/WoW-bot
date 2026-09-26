@@ -21,3 +21,45 @@ max_session_seconds = 3600
 
 # Logging output level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
 log_level = "INFO"
+
+# ---------------------------------------------------------------------------
+# T-FIX-29 real-perception settings (hamberger §6.3, ported).
+# Authoritative file: config/perception.example.toml, loaded by
+# src/wow_bot/perception/perception_config.py (same standalone pattern as
+# farm profiles and rotations). The frozen lab Config rejects unknown keys,
+# so the keys below are documented here as comments — not active TOML keys —
+# keeping this file loadable while satisfying "every key with a comment".
+# An active unknown key must still raise ConfigError (see test_config.py).
+# ---------------------------------------------------------------------------
+# [perception]
+# schema_version = 1
+# tesseract_cmd = "C:\\Program Files\\Tesseract-OCR\\tesseract.exe"
+# calibrated_resolution = [1920, 1080]
+# [capture]
+# idle_fps = 10
+# combat_fps = 30
+# [bars]
+# hp_roi = [514, 771, 123, 18]
+# mana_roi = [514, 793, 123, 17]
+# [combat]
+# edge_size = 150
+# red_ratio_thresh = 0.02
+# cooldown_s = 1.0
+# [target]
+# name_template = "models/target_name_template.png"
+# frame_template = "models/target_template.png"
+# known_enemies = ["Defias Thug", "Kobold Vermin"]
+# match_thresh = 0.35
+# confirm_thresh = 0.80
+# ocr_thresh = 0.50
+# ocr_confirm_thresh = 0.85
+# [enemies]
+# yolo_weights = "models/weights/best.pt"
+# confidence = 0.5
+# [events]
+# combat_region = [10, 700, 420, 200]
+# chat_region = [10, 900, 420, 150]
+# [minimap]
+# minimap_roi = [1705, 33, 206, 217]
+# arrow_template = "models/arrow_template.png"
+# smoothing_frames = 5

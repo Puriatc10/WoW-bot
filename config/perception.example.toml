@@ -1,0 +1,95 @@
+# T-FIX-29 standalone perception settings (hamberger §6.3, ported).
+# The frozen lab Config rejects unknown keys, so these live here — not in
+# config/lab.example.toml — with their own loader
+# (src/wow_bot/perception/perception_config.py).
+# Shape-only validation: the loader never checks file existence, so MOCK_MODE
+# and CI load this without Tesseract, YOLO weights, or template PNGs.
+
+# Core perception metadata
+[perception]
+# Config schema version (must equal 1)
+schema_version = 1
+# Absolute path to the Tesseract OCR engine binary (set at reader
+# construction time via pytesseract.pytesseract.tesseract_cmd, never import)
+tesseract_cmd = "C:\\Program Files\\Tesseract-OCR\\tesseract.exe"
+# Screen resolution the ROIs below were calibrated at (port plan risk R-10)
+calibrated_resolution = [1920, 1080]
+
+# Capture frame-rate budget (cheap channels run every frame)
+[capture]
+# Idle capture rate in frames per second
+idle_fps = 10
+# Combat capture rate in frames per second
+combat_fps = 30
+
+# Bar reader regions (x, y, width, height in calibrated pixels)
+[bars]
+# HP bar region of interest
+hp_roi = [514, 771, 123, 18]
+# Mana bar region of interest
+mana_roi = [514, 793, 123, 17]
+# Sampling budget in Hz; 'inf' means read on every frame (cheap channel)
+sampling_hz = inf
+
+# Combat edge detector tuning
+[combat]
+# Pixel width of the screen-edge strip examined for red
+edge_size = 150
+# Red-pixel ratio above which combat is declared
+red_ratio_thresh = 0.02
+# Cooldown latch in seconds before combat may clear
+cooldown_s = 1.0
+# Sampling budget in Hz; 'inf' means scan edges on every frame (cheap channel)
+sampling_hz = inf
+
+# Target reader: template matching + OCR + whitelist
+[target]
+# Template PNG for the target nameplate
+name_template = "models/target_name_template.png"
+# Template PNG for the target frame
+frame_template = "models/target_template.png"
+# Enemy name whitelist (generalises poorly; advisory until YOLO classes land)
+known_enemies = ["Defias Thug", "Kobold Vermin"]
+# First-pass template-match threshold from hamberger _find_target
+match_thresh = 0.35
+# Confirmation template-match threshold from hamberger _find_target
+confirm_thresh = 0.80
+# OCR acceptance threshold from hamberger _find_target
+ocr_thresh = 0.50
+# OCR confirmation threshold from hamberger _find_target
+ocr_confirm_thresh = 0.85
+# Sampling budget in Hz; OCR is throttled and cached between samples (§6.6)
+sampling_hz = 2.0
+# Accepted reads between re-OCR runs while the nameplate stays locked
+name_refresh_frames = 5
+
+# Enemy detector (YOLO stack is the optional 'yolo' extra)
+[enemies]
+# YOLO weights path resolved from config; gitignored (*.pt), fail-closed
+yolo_weights = "models/weights/best.pt"
+# YOLO detection confidence threshold
+confidence = 0.5
+# Sampling budget in Hz; YOLO inference is sampled, not run per frame (§6.6)
+sampling_hz = 2.0
+
+# Event detector OCR regions (x, y, width, height in calibrated pixels)
+[events]
+# Combat-log OCR region
+combat_region = [10, 700, 420, 200]
+# Chat OCR region
+chat_region = [10, 900, 420, 150]
+# Sampling budget in Hz; OSC is throttled and cached between samples (§6.6)
+sampling_hz = 1.0
+
+# Minimap tracker
+[minimap]
+# Minimap region of interest
+minimap_roi = [1705, 33, 206, 217]
+# Player-arrow template PNG
+arrow_template = "models/arrow_template.png"
+# Circular-mean smoothing window in frames
+smoothing_frames = 5
+# Sampling budget in Hz; template match is throttled and cached (§6.6)
+sampling_hz = 5.0
+# Minimum template-match score for accepting the arrow
+match_thresh = 0.55

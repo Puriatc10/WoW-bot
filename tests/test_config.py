@@ -72,6 +72,40 @@ extra_unknown_key = "not_allowed"
         load_config(config_file)
 
 
+def test_lab_example_tomls_stay_loadable() -> None:
+    """T-FIX-29: perception keys are comments, so the example stays loadable."""
+    example = Path("config/lab.example.toml")
+    cfg = load_config(example)
+    assert cfg.lab_mode is False
+    assert cfg.dry_run is True
+    text = example.read_text(encoding="utf-8")
+    for key in (
+        "tesseract_cmd",
+        "hp_roi",
+        "mana_roi",
+        "minimap_roi",
+        "yolo_weights",
+        "edge_size",
+        "red_ratio_thresh",
+        "cooldown_s",
+        "match_thresh",
+        "confirm_thresh",
+        "ocr_thresh",
+        "ocr_confirm_thresh",
+        "combat_region",
+        "chat_region",
+        "known_enemies",
+        "smoothing_frames",
+        "calibrated_resolution",
+        "idle_fps",
+        "combat_fps",
+        "name_template",
+        "frame_template",
+        "arrow_template",
+    ):
+        assert key in text
+
+
 @pytest.mark.parametrize(
     "forbidden_domain",
     [
