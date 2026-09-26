@@ -38,6 +38,7 @@ No other failures were observed. `tests/test_perception_adapter.py` reports
 | Marker | Meaning |
 |---|---|
 | `DONE` | Merged; acceptance re-verified at the snapshot above. |
+| `DONE*` | Acceptance verified in the working tree; not yet committed. |
 | `PARTIAL` | Merged with a known residual that another task owns. |
 | `PENDING` | Not started. |
 | `PROPOSED` | Not present in `LAB_PHASE_ROADMAP.md`, ADR-001, or ADR-002. Proposed by this document to close a documented gap; requires ratification before implementation starts. |
@@ -85,7 +86,7 @@ Tier names are unchanged from the original revision of this document.
 | 1 | T-FIX-03.5 | ADR-002 GameState extension (design) | DONE |
 | 1 | T-FIX-03.6 | GameState extension (implementation) | DONE |
 | 1 | T-FIX-04 | Reference MockAdapter | PENDING |
-| 1b — Perception Contract completion (ADR-002) | T-FIX-23 | PERCEPTION.md vision channel extensions | PENDING |
+| 1b — Perception Contract completion (ADR-002) | T-FIX-23 | PERCEPTION.md vision channel extensions | DONE* |
 | 1b | T-FIX-21 | Adapter derivation and runtime context | PENDING |
 | 1b | T-FIX-24 | Per-view projection expectations (xfail split) | PENDING |
 | 1b | T-FIX-22 | perception_confidence plumbing and thresholding | PENDING |
@@ -356,14 +357,23 @@ contracts; wiring the backend into the lab runner (T-FIX-20).
 
 ## T-FIX-23 — PERCEPTION.md vision channel extensions
 
-**Status:** PENDING (doc-only; may start immediately)
+**Status:** DONE* — implemented and verified in the working tree; not yet
+committed.
 **Depends on:** none
 **Deliverables:**
 - `docs/PERCEPTION.md`
 
 **Contract:**
-- Add the four missing component rows to the vision table: **Bag frame**,
-  **XP bar**, **Enemy cast bar**, and **Lootable-corpse indicator**.
+- Add the missing component rows to the vision table. ADR-002 §Decision 6
+  says "four" (bag frame, XP bar, enemy cast bar, lootable-corpse
+  indicator), but its own §Field provenance requires five channels, because
+  `durability_fraction` needs a "Character frame" channel that Decision 6
+  omits. **Five rows are added**, since the acceptance criterion below is
+  that every channel-pending field has a named channel: **Bag frame**
+  (`inventory_count`, `inventory_max`), **XP bar** (`level_or_xp`),
+  **Character frame** (`durability_fraction`), **Enemy cast bar**
+  (`incoming_casts`), and **Lootable-corpse indicator**
+  (`target_is_lootable`).
 - Add the matching anchor entries to the calibration list.
 - Each new row states: source channel, extraction method, expected accuracy
   class, and confidence semantics — per the per-field rules ADR-002
@@ -371,15 +381,37 @@ contracts; wiring the backend into the lab runner (T-FIX-20).
 - No existing row changes. No code changes.
 
 **Acceptance:**
-- [ ] Each of the six channel-pending `GameState` fields
+- [x] Each of the six channel-pending `GameState` fields
       (`inventory_count`, `inventory_max`, `level_or_xp`,
       `durability_fraction`, `target_is_lootable`, `incoming_casts`) has a
-      named channel with stated confidence semantics.
-- [ ] The four existing rows are byte-identical to the pre-task version.
-- [ ] No `src/` file changed.
+      named channel with stated confidence semantics — §2.1 of
+      `docs/PERCEPTION.md`.
+- [x] The six pre-existing vision rows are byte-identical to the
+      pre-task version. `git diff --unified=0` shows the table change as a
+      pure insertion after the last existing row.
+- [x] No `src/` file changed — `git status --porcelain -- src` is empty.
+- [x] §5 calibration lists the five new anchors and marks them
+      opportunistic (absent anchor → field `None`, session does not fail).
+- [x] §6 records that the frozen frame corpus is absent, so no
+      precision/recall target is measurable yet, and states that every new
+      channel therefore reports `None` rather than a guess.
 
 **Out of scope:** implementing any vision component; the frozen frame
 corpus; changing the extraction methods already documented.
+
+**Notes / deviations:**
+- ADR-002 §Decision 6 says "four new component rows". **Five** were added,
+  because `durability_fraction` needs the "Character frame" channel that
+  Decision 6 omits while §Field provenance specifies it. The acceptance
+  criterion (every channel-pending field owns a named channel) is what
+  governs, so the ADR's count is the part that is incomplete, not the
+  document.
+- ADR-002 also assigns this task a precision/recall measurement on the
+  frozen frame corpus `docs/PERCEPTION.md` §6 requires. That corpus does
+  not exist in the repository, so the measurement cannot be performed. It
+  is recorded as an open validation gate (§6) rather than being
+  fabricated. Consequence: `target_is_lootable` stays `None` and `LootView`
+  keeps raising until the corpus exists.
 
 ---
 
