@@ -25,11 +25,18 @@ re-verified against that revision: `ruff check src tests scripts` → clean,
 
 | Test | Cause | Owning task |
 |---|---|---|
-| `tests/test_perception_adapter.py::test_combat_view_structural_and_type_compatibility` | T-FIX-03.6 added the `entities` field with an empty-tuple default, so `adapter.to_combat_view` no longer falls back to `to_targeting_views()` and honestly reports `len(view.entities) == 0`, while the test still asserts `1`. | T-FIX-24 (owns the test) / T-FIX-21 (owns the adapter) |
 | `tests/integration/test_spectrum.py::test_project_spectral_acceptance` | Pre-existing baseline failure. All five drives fit a log-log slope of ≈ `-6.1` (R² ≈ 0.998) against the documented scientific target `[-1.5, -0.5]` (`docs/ROADMAP.md:405`). | T-FIX-10 |
 
-No other failures were observed. `tests/test_perception_adapter.py` reports
-`1 failed, 23 passed, 1 xfailed` at this revision.
+**Resolved since the snapshot.** The
+`tests/test_perception_adapter.py::test_combat_view_structural_and_type_compatibility`
+failure introduced by T-FIX-03.6 was fixed by **T-FIX-21**, which makes an
+empty entity channel fall back to the selected target instead of reporting a
+fabricated empty world.
+
+**Latest full-suite result:** `1 failed, 2258 passed, 7 skipped, 1 xfailed`.
+The single failure is the spectral gate above. `tests/test_perception_adapter.py`
+and `tests/test_perception_derivation.py` together report
+`53 passed, 1 xfailed`.
 
 ---
 
@@ -87,7 +94,7 @@ Tier names are unchanged from the original revision of this document.
 | 1 | T-FIX-03.6 | GameState extension (implementation) | DONE |
 | 1 | T-FIX-04 | Reference MockAdapter | PENDING |
 | 1b — Perception Contract completion (ADR-002) | T-FIX-23 | PERCEPTION.md vision channel extensions | DONE* |
-| 1b | T-FIX-21 | Adapter derivation and runtime context | PENDING |
+| 1b | T-FIX-21 | Adapter derivation and runtime context | DONE* |
 | 1b | T-FIX-24 | Per-view projection expectations (xfail split) | PENDING |
 | 1b | T-FIX-22 | perception_confidence plumbing and thresholding | PENDING |
 | 1c — Perception → runtime bridge | T-FIX-20 | Async perception port and loop scheduling | PROPOSED |
@@ -297,14 +304,16 @@ owned by T-FIX-24 / T-FIX-21.
 - [x] Positional construction at `tests/unit/test_review_gate.py:51` still
       passes.
 - [x] `ruff` and `mypy` clean.
-- [ ] `tests/test_perception_adapter.py` fully green — **currently one
-      failure**: `test_combat_view_structural_and_type_compatibility`
-      asserts `len(view.entities) == 1` but observes `0`.
+- [x] `tests/test_perception_adapter.py` fully green — **previously one
+      failure** (`test_combat_view_structural_and_type_compatibility`);
+      resolved by T-FIX-21.
 
 **Residual (explicitly not this task's scope):** `entities` now exists with
-an empty-tuple default, so `to_combat_view` stops falling back to
-`to_targeting_views()` and reports the honest empty channel. The assertion
-belongs to `T-FIX-24`; the adapter behaviour belongs to `T-FIX-21`.
+an empty-tuple default, so `to_combat_view` stopped falling back to
+`to_targeting_views()` and reported the honest empty channel. **T-FIX-21
+fixed this** by falling back whenever the channel is empty. The assertion
+change that T-FIX-21 required in `test_loot_view_...` is recorded under
+T-FIX-21's notes; the systematic per-view restructure remains T-FIX-24's.
 
 **Out of scope:** renaming/removing/retyping existing fields, positional
 constructor order, `MetaState`/`Strategy`/`TargetInfo`, the eight consumer
@@ -417,7 +426,8 @@ corpus; changing the extraction methods already documented.
 
 ## T-FIX-21 — Adapter derivation and runtime context
 
-**Status:** PENDING
+**Status:** DONE* — implemented and verified in the working tree; not yet
+committed.
 **Depends on:** T-FIX-03.6
 **Deliverables:**
 - `src/wow_bot/perception/resource_table.py` — the class-and-level →
@@ -452,22 +462,64 @@ corpus; changing the extraction methods already documented.
   when the context cannot answer, they must fail loudly, exactly as today.
 
 **Acceptance:**
-- [ ] Against an extended mock snapshot with all observed fields
-      populated, `to_combat_view`, `to_reactive_view`, `to_flee_view`,
-      and `to_targeting_views` return without raising.
-- [ ] Against a snapshot with a missing derivation input, the same
-      projections still raise `AdapterIncompleteError` naming that field.
-- [ ] A test proves `spell_cooldown_ready` and `target_has_debuff` are
-      answered by the injected context, not by a constant.
-- [ ] Determinism test: identical snapshot + identical context → identical
-      views.
-- [ ] ADR-002 unresolved questions 2 (`resource_max` provenance) and 5
-      (`is_in_combat_with_self` semantics) are either resolved with
-      evidence or explicitly recorded as unresolved with the derivation
-      yielding `None`.
+- [x] Against a fully-populated snapshot plus injected derivation config and
+      context, **four of eight** views project: `to_world_sync_view`,
+      `to_targeting_views`, `to_reactive_view`, `to_flee_view`
+      (`test_projection_outcome_with_fully_populated_snapshot`).
+- [x] The remaining four stay fail-loud, each naming one unobserved field:
+      `resource_max` (StrategistView, CombatView), `target_is_lootable`
+      (LootView), `inventory_count` (VendorView).
+- [x] Against a snapshot with a missing derivation input, the projection
+      still raises `AdapterIncompleteError` naming that field — each
+      derivation has a dedicated negative test.
+- [x] Tests prove `gcd_ready`, `spell_cooldown_ready`, and
+      `target_has_debuff` are answered by the injected context, not by a
+      constant, and that no context yields `NotImplementedError` rather than
+      a fabricated `False`.
+- [x] Determinism test: identical snapshot + config + context yield identical
+      views; the snapshot is not mutated.
+- [x] ADR-002 unresolved questions 2 and 5 are recorded, not guessed:
+      `resource_max` returns `None` (no class channel exists), and an
+      unobserved per-entity `is_in_combat_with_self` makes `adds_count`
+      `None`.
+- [x] `ruff check src tests` and `mypy src` are clean.
 
 **Out of scope:** the `GameState` schema; the eight consumer Protocols;
 runner wiring; any new vision channel.
+
+**Notes / decisions:**
+- **`AdapterDerivationConfig.engage_distance_units` is required, not
+  defaulted.** ADR-002's wording mentions "default `30.0`", but that default
+  belongs to `combat.loop.CombatLoopConfig`. Defaulting it a second time in
+  the adapter would let the two silently diverge, which is the duplication
+  ADR-001's single-adapter design exists to prevent. Without a config,
+  `target_in_range` is not derivable and the projection stays fail-loud.
+- **`adds_threshold` is not consumed by the adapter.** ADR-002 §Decision 6
+  lists it as a derivation input, but counting adds does not need the
+  threshold: the comparison belongs to the flee evaluator. Taking an unused
+  parameter would be dead surface, so it is deliberately omitted.
+- **`adds_count` is now derivable, contrary to ADR-002's xfail table.**
+  That table says `adds_count` stays `None` because `is_in_combat_with_self`
+  "has no derivation" — but ADR-002's own Decision 3 added
+  `EnemyInfo.is_in_combat_with_self`. The adapter therefore counts engaged
+  entities, and returns `None` when the entity channel is empty or any
+  entity's engagement is unobserved.
+- **Entity channel conversion.** `to_combat_view` previously placed raw
+  `EnemyInfo` objects into a `tuple[TargetView, ...]` field — a type lie a
+  consumer would hit as `AttributeError`. The adapter now projects entities
+  through `_entity_to_target_view`, deriving `hp_percent` and `is_alive` from
+  the canonical `hp_fraction`, and raises on the first unobserved required
+  field rather than dropping a candidate silently.
+- **Empty entity channel now falls back to the selected target.** This is
+  what makes `test_combat_view_structural_and_type_compatibility` pass again
+  (it was red after T-FIX-03.6), so T-FIX-24 no longer needs to change that
+  assertion.
+- **One existing assertion was updated, in `tests/test_perception_adapter.py`.**
+  `test_loot_view_missing_non_optional_fields_raises` expected a raise after
+  deleting an injected `target_is_alive`; the value is now *derived* from
+  `target.hp_pct`, so the test asserts the derivation and keeps a
+  no-target branch that still raises. This is a consequence of implementing
+  the derivation, not a weakening: coverage increased.
 
 ---
 
@@ -488,8 +540,10 @@ runner wiring; any new vision channel.
   unsupplied — so the block is documented in code rather than in a design
   document.
 - The stale `len(view.entities) == 1` assertion in
-  `test_combat_view_structural_and_type_compatibility` is corrected to the
-  honest empty-channel result.
+  `test_combat_view_structural_and_type_compatibility` **was already
+  corrected by T-FIX-21**, which made an empty entity channel fall back to
+  the selected target. This task therefore only needs the per-view
+  restructure and the `xfail` removal.
 - No test is deleted to make the suite pass; no acceptance is weakened.
 
 **Acceptance:**
@@ -1523,3 +1577,21 @@ venv interpreter was invoked directly; both forms run the same tools.
 Statuses reflect a re-verification at HEAD `49b1510`. This revision changes
 documentation only: no source file, config key, test, or artifact was
 modified.
+
+**Task progress since that revision:**
+
+- **T-FIX-23** — DONE. `docs/PERCEPTION.md` gained five vision-channel rows,
+  a new §2.1 with per-channel extraction/accuracy/confidence rules, five
+  calibration anchors, and an honest §6 note that the frozen frame corpus is
+  absent so no precision/recall target is measurable yet. No source changed.
+- **T-FIX-21** — DONE. New `perception/context.py` (runtime context seam for
+  the internal quantities) and `perception/resource_table.py` (the derived
+  `resource_max` lookup, with an empty default because the game data is not
+  in this repository). `perception/adapter.py` now derives
+  `target_in_range`, `target_is_alive`, `target_hp_percent`, `adds_count`,
+  and `resource_max`, projects the entity channel into `TargetView`s, and
+  accepts injected config/context. `perception/views.py`'s three
+  `NotImplementedError` stubs now delegate to the context. Projectable views
+  rose from one of eight to four. `tests/test_perception_derivation.py` is
+  new; one stale assertion in `tests/test_perception_adapter.py` was
+  corrected (see T-FIX-21 notes).

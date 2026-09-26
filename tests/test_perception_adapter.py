@@ -435,11 +435,20 @@ def test_flee_view_missing_non_optional_fields_raises() -> None:
 
 
 def test_loot_view_missing_non_optional_fields_raises() -> None:
-    # Missing target_is_alive
+    # target_is_alive is DERIVED from the canonical target HP fraction
+    # (ADR-002 "derived" class, implemented by T-FIX-21), so removing an
+    # injected override no longer raises: the derivation supplies the value.
+    # The fixture's target has hp_pct == 0.50, so the target is alive.
     state = _make_well_formed_state()
     delattr(state, "target_is_alive")
+    assert GameStateAdapter(state).to_loot_view().target_is_alive is True
+
+    # With no target at all the derivation has no input, so the projection
+    # still fails loudly rather than guessing liveness.
+    state_no_target = _make_well_formed_state(target=None)
+    delattr(state_no_target, "target_is_alive")
     with pytest.raises(AdapterIncompleteError, match="LootStateView requires non-Optional target_is_alive"):
-        GameStateAdapter(state).to_loot_view()
+        GameStateAdapter(state_no_target).to_loot_view()
 
     # Missing target_is_lootable
     state = _make_well_formed_state()

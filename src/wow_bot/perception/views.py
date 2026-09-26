@@ -10,9 +10,10 @@ Protocol is imported or inherited here.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from wow_bot.executor.states import FSMState
+from wow_bot.perception.context import RuntimeContext
 
 __all__ = [
     "CombatView",
@@ -113,14 +114,28 @@ class CombatView:
     current_target_id: str | None = None
     target_x: float | None = None
     target_y: float | None = None
+    # Controller-owned quantities are answered by this context, not observed.
+    # None means "no context supplied", and the query methods then fail loudly
+    # instead of returning a fabricated False.
+    runtime_context: RuntimeContext | None = field(default=None, repr=False, compare=False)
 
     def target_has_debuff(self, debuff_id: str, /) -> bool:
-        """Check debuff status; fails loudly as debuffs are unknown to GameState."""
-        raise NotImplementedError("target_has_debuff is not supported by canonical GameState")
+        """Delegate to the runtime context; fail loudly when none was supplied."""
+        if self.runtime_context is None:
+            raise NotImplementedError(
+                "target_has_debuff requires a RuntimeContext; none was supplied to "
+                "GameStateAdapter"
+            )
+        return bool(self.runtime_context.target_has_debuff(debuff_id))
 
     def spell_cooldown_ready(self, spell_id: str, /) -> bool:
-        """Check cooldown status; fails loudly as cooldowns are unknown to GameState."""
-        raise NotImplementedError("spell_cooldown_ready is not supported by canonical GameState")
+        """Delegate to the runtime context; fail loudly when none was supplied."""
+        if self.runtime_context is None:
+            raise NotImplementedError(
+                "spell_cooldown_ready requires a RuntimeContext; none was supplied to "
+                "GameStateAdapter"
+            )
+        return bool(self.runtime_context.spell_cooldown_ready(spell_id))
 
 
 @dataclass(frozen=True)
@@ -148,10 +163,18 @@ class ReactiveView:
     self_y: float
     incoming_casts: tuple[EnemyCastView, ...] = ()
     current_target_id: str | None = None
+    # See CombatView.runtime_context: None means "no context supplied" and the
+    # query method fails loudly rather than fabricating a cooldown answer.
+    runtime_context: RuntimeContext | None = field(default=None, repr=False, compare=False)
 
     def spell_cooldown_ready(self, spell_id: str) -> bool:
-        """Check cooldown status; fails loudly as cooldowns are unknown to GameState."""
-        raise NotImplementedError("spell_cooldown_ready is not supported by canonical GameState")
+        """Delegate to the runtime context; fail loudly when none was supplied."""
+        if self.runtime_context is None:
+            raise NotImplementedError(
+                "spell_cooldown_ready requires a RuntimeContext; none was supplied to "
+                "GameStateAdapter"
+            )
+        return bool(self.runtime_context.spell_cooldown_ready(spell_id))
 
 
 @dataclass(frozen=True)
