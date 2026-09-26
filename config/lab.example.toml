@@ -63,3 +63,49 @@ log_level = "INFO"
 # minimap_roi = [1705, 33, 206, 217]
 # arrow_template = "models/arrow_template.png"
 # smoothing_frames = 5
+# [pose]
+# coordinate_roi = [1720, 40, 180, 24]
+# min_confidence = 0.6
+# sampling_hz = 1.0
+# [reaction]
+# nameplate_roi = [560, 300, 800, 40]
+# min_pixels = 12
+# dominance_thresh = 0.6
+# [proximity]
+# reference_width_px = 120.0
+# reference_distance_yd = 10.0
+# min_confidence = 0.5
+# [bag]
+# grid_origin = [1600, 700]
+# columns = 4
+# rows = 4
+# slot_size = [36, 36]
+# gap = 2
+# empty_slot_template = "models/bag_empty_slot_template.png"
+# occupied_slot_template = "models/bag_occupied_slot_template.png"
+# min_confidence = 0.7
+# sampling_hz = 1.0
+# [xp]
+# bar_roi = [600, 1060, 720, 12]
+# level_roi = [560, 1050, 36, 20]
+# min_confidence = 0.5
+# sampling_hz = 1.0
+# [durability]
+# slot_rois = [[900, 300, 26, 26], [940, 300, 26, 26]]
+# min_score = 0.5
+# quorum_fraction = 0.5
+# min_confidence = 0.6
+# sampling_hz = 1.0
+# [cast]
+# cast_roi = [560, 260, 800, 26]
+# border_roi = [560, 258, 800, 3]
+# border_interruptible = false
+# min_confidence = 0.6
+# max_remaining_s = 30.0
+# sampling_hz = 2.0
+# [loot]
+# sparkle_roi = [760, 400, 320, 200]
+# min_pixels = 40
+# dominance_thresh = 0.6
+# min_confidence = 0.9
+# sampling_hz = 1.0

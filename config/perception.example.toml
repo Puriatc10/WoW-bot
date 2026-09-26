@@ -129,3 +129,90 @@ reference_distance_yd = 10.0
 min_confidence = 0.5
 # Sampling budget in Hz; 'inf' means convert on every frame (cheap channel)
 sampling_hz = inf
+
+# T-FIX-31 Bag frame channel: the bag window's slot grid read while the
+# window is open. inventory_count is the occupied-slot count; inventory_max
+# is the grid size. Opportunistic: absent window -> both fields None.
+[bag]
+# Top-left pixel of the first slot in the grid (x, y in calibrated pixels)
+grid_origin = [1600, 700]
+# Slot columns in the grid
+columns = 4
+# Slot rows in the grid
+rows = 4
+# Slot interior size in pixels [width, height]; must match the templates
+slot_size = [36, 36]
+# Pixels between two adjacent slots (both axes)
+gap = 2
+# Template PNG for an empty slot
+empty_slot_template = "models/bag_empty_slot_template.png"
+# Template PNG for an occupied slot
+occupied_slot_template = "models/bag_occupied_slot_template.png"
+# Minimum mean per-slot template-match score for a count to be emitted
+min_confidence = 0.7
+# Sampling budget in Hz; template matching is throttled and cached (§6.6)
+sampling_hz = 1.0
+
+# T-FIX-31 XP bar channel: bar fill fraction + OCR'd level label, emitted as
+# the single monotone level_or_xp scalar.
+[xp]
+# Experience bar region of interest (x, y, width, height)
+bar_roi = [600, 1060, 720, 12]
+# Level label region of interest; omit the key entirely when not on screen
+level_roi = [560, 1050, 36, 20]
+# Minimum bar-fill / level-OCR confidence for the field to be emitted
+min_confidence = 0.5
+# Sampling budget in Hz; OCR is throttled and cached between samples (§6.6)
+sampling_hz = 1.0
+
+# T-FIX-31 Character frame channel: OCR of the character sheet's per-slot
+# durability readouts, meaned over the slots read confidently.
+[durability]
+# Explicit regions of interest for the durability slots that are read
+slot_rois = [[900, 300, 26, 26], [940, 300, 26, 26]]
+# Minimum per-slot OCR score for that slot to join the mean
+min_score = 0.5
+# Share of configured slots that must read above min_score (the quorum)
+quorum_fraction = 0.5
+# Minimum confidence-weighted mean score for durability_fraction to be emitted
+min_confidence = 0.6
+# Sampling budget in Hz; OCR is throttled and cached between samples (§6.6)
+sampling_hz = 1.0
+
+# T-FIX-31 Enemy cast bar channel: the target-frame cast bar -> one
+# IncomingCast entry, or an empty tuple when no cast is observed.
+[cast]
+# Cast bar region of interest holding the spell name (x, y, width, height)
+cast_roi = [560, 260, 800, 26]
+# Interruptibility border strip; omit the key entirely when not on screen
+border_roi = [560, 258, 800, 3]
+# True when the interruptibility border is rendered blue for interruptible
+# casts; false when the client marks non-interruptible casts instead
+border_interruptible = false
+# Minimum OCR confidence for a cast to be emitted
+min_confidence = 0.6
+# Longest cast duration in seconds used with the bar fill fraction
+max_remaining_s = 30.0
+# Sampling budget in Hz; OCR is throttled and cached between samples (§6.6)
+sampling_hz = 2.0
+
+# T-FIX-31 Lootable-corpse indicator: colour segmentation for the loot
+# sparkle. Gated off until §6 precision/recall is measurable, so the field
+# stays None and the loot consumer keeps raising.
+[loot]
+# Region of interest holding the loot sparkle (x, y, width, height)
+sparkle_roi = [760, 400, 320, 200]
+# Minimum sparkle-coloured pixels before a positive is considered
+min_pixels = 40
+# Minimum share of bright pixels the sparkle class must hold
+dominance_thresh = 0.6
+# Minimum sparkle dominance for target_is_lootable to be emitted
+min_confidence = 0.9
+# Sampling budget in Hz; colour segmentation is throttled and cached (§6.6)
+sampling_hz = 1.0
+
+# T-FIX-31 spell-name -> spell-id table for the Enemy cast bar channel.
+# A name absent from this table drops the cast rather than guessing an id.
+[cast.spell_ids]
+# One entry per spell the reactive layer may interrupt
+"Shadow Bolt" = 686

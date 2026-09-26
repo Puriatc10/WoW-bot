@@ -7,9 +7,10 @@ type — the same pattern as farm profiles (``farm/profile.py``) and
 rotations (``combat/rotation.py`` + ``scripts/lab/full_soak.py``).
 
 Every hardcoded value from ``docs/lab_phase/HAMBERGER_PORT_PLAN.md``
-§6.3 becomes a validated key here, and the T-FIX-30 channels
+§6.3 becomes a validated key here, the T-FIX-30 channels
 (``[pose]``, ``[reaction]``, ``[proximity]``) add theirs under the same
-rules. The loader only validates *shape* (types, ranges, unknown keys); it
+rules, and the T-FIX-31 UI panel channels (``[bag]``, ``[xp]``,
+``[durability]``, ``[cast]``, ``[loot]``) do too. The loader only validates *shape* (types, ranges, unknown keys); it
 never checks that weight/template files exist or that binaries are
 installed, so MOCK_MODE and CI load the example without Tesseract, YOLO
 weights, or template PNGs present. Existence is enforced fail-closed at
@@ -54,6 +55,11 @@ ALLOWED_TOP_LEVEL_KEYS: frozenset[str] = frozenset(
         "pose",
         "reaction",
         "proximity",
+        "bag",
+        "xp",
+        "durability",
+        "cast",
+        "loot",
     }
 )
 
@@ -158,6 +164,66 @@ ALLOWED_PROXIMITY_KEYS: frozenset[str] = frozenset(
     }
 )
 
+#: T-FIX-31 Bag frame channel: slot grid -> inventory_count / inventory_max.
+ALLOWED_BAG_KEYS: frozenset[str] = frozenset(
+    {
+        "grid_origin",
+        "columns",
+        "rows",
+        "slot_size",
+        "gap",
+        "empty_slot_template",
+        "occupied_slot_template",
+        "min_confidence",
+        "sampling_hz",
+    }
+)
+
+#: T-FIX-31 XP bar channel: fill fraction + level label -> level_or_xp.
+ALLOWED_XP_KEYS: frozenset[str] = frozenset(
+    {
+        "bar_roi",
+        "level_roi",
+        "min_confidence",
+        "sampling_hz",
+    }
+)
+
+#: T-FIX-31 Character frame channel: per-slot durability -> durability_fraction.
+ALLOWED_DURABILITY_KEYS: frozenset[str] = frozenset(
+    {
+        "slot_rois",
+        "min_score",
+        "quorum_fraction",
+        "min_confidence",
+        "sampling_hz",
+    }
+)
+
+#: T-FIX-31 Enemy cast bar channel: cast bar -> incoming_casts.
+ALLOWED_CAST_KEYS: frozenset[str] = frozenset(
+    {
+        "cast_roi",
+        "border_roi",
+        "spell_ids",
+        "border_interruptible",
+        "min_confidence",
+        "sampling_hz",
+        "max_remaining_s",
+    }
+)
+
+#: T-FIX-31 Lootable-corpse channel: loot sparkle -> target_is_lootable.
+ALLOWED_LOOT_KEYS: frozenset[str] = frozenset(
+    {
+        "sparkle_roi",
+        "min_pixels",
+        "dominance_thresh",
+        "min_confidence",
+        "sampling_hz",
+    }
+)
+
 
 @dataclass(frozen=True)
 class PerceptionConfig:
@@ -206,6 +272,37 @@ class PerceptionConfig:
     proximity_reference_distance_yd: float
     proximity_min_confidence: float
     proximity_sampling_hz: float
+    # T-FIX-31 UI panel channels (docs/PERCEPTION.md §2.1).
+    bag_grid_origin: tuple[int, int]
+    bag_columns: int
+    bag_rows: int
+    bag_slot_size: tuple[int, int]
+    bag_gap: int
+    bag_empty_slot_template: str
+    bag_occupied_slot_template: str
+    bag_min_confidence: float
+    bag_sampling_hz: float
+    xp_bar_roi: tuple[int, int, int, int]
+    xp_level_roi: tuple[int, int, int, int] | None
+    xp_min_confidence: float
+    xp_sampling_hz: float
+    durability_slot_rois: tuple[tuple[int, int, int, int], ...]
+    durability_min_score: float
+    durability_quorum_fraction: float
+    durability_min_confidence: float
+    durability_sampling_hz: float
+    cast_roi: tuple[int, int, int, int]
+    cast_border_roi: tuple[int, int, int, int] | None
+    cast_spell_ids: dict[str, str]
+    cast_border_interruptible: bool
+    cast_min_confidence: float
+    cast_sampling_hz: float
+    cast_max_remaining_s: float
+    loot_sparkle_roi: tuple[int, int, int, int]
+    loot_min_pixels: int
+    loot_dominance_thresh: float
+    loot_min_confidence: float
+    loot_sampling_hz: float
 
 
 def _require_section(data: dict[str, Any], name: str) -> dict[str, Any]:
@@ -253,6 +350,12 @@ def _as_positive_int(value: Any, name: str) -> int:
     return value
 
 
+def _as_non_negative_int(value: Any, name: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise PerceptionConfigError(f"{name} must be an int >= 0")
+    return value
+
+
 def _as_non_negative_float(value: Any, name: str) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise PerceptionConfigError(f"{name} must be a number")
@@ -282,6 +385,66 @@ def _as_non_empty_str(value: Any, name: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise PerceptionConfigError(f"{name} must be a non-empty string")
     return value
+
+
+def _as_point(value: Any, name: str) -> tuple[int, int]:
+    if (
+        not isinstance(value, list)
+        or len(value) != 2
+        or any(isinstance(v, bool) or not isinstance(v, int) for v in value)
+    ):
+        raise PerceptionConfigError(f"{name} must be [x, y] ints")
+    x, y = value
+    if x < 0 or y < 0:
+        raise PerceptionConfigError(f"{name} needs x,y >= 0")
+    return (x, y)
+
+
+def _as_slot_rois(value: Any, name: str) -> tuple[tuple[int, int, int, int], ...]:
+    """Validate the Character frame's explicit per-slot regions.
+
+    The layout is explicit rather than a grid, because the character sheet's
+    slot positions are not a uniform grid (T-FIX-31 design note); at least
+    one slot is required, since a durability mean over zero slots would be a
+    fabricated ``1.0``.
+    """
+    if not isinstance(value, list) or not value:
+        raise PerceptionConfigError(f"{name} must be a non-empty list of ROIs")
+    return tuple(_as_roi(entry, f"{name}[{index}]") for index, entry in enumerate(value))
+
+
+def _as_bool(value: Any, name: str) -> bool:
+    if not isinstance(value, bool):
+        raise PerceptionConfigError(f"{name} must be a boolean")
+    return value
+
+
+def _as_optional_roi(value: Any, name: str) -> tuple[int, int, int, int] | None:
+    """Validate an ROI that may be present or explicitly absent (``None``)."""
+    if value is None:
+        return None
+    if isinstance(value, list) and not value:
+        return None
+    return _as_roi(value, name)
+
+
+def _as_spell_ids(value: Any, name: str) -> dict[str, str]:
+    """Validate the spell-name -> spell-id table.
+
+    An empty table is allowed and means "no spell id is resolvable", which
+    makes the cast reader drop every cast rather than emit a guessed id
+    (``docs/PERCEPTION.md`` §2.1, Enemy cast bar).
+    """
+    if not isinstance(value, dict):
+        raise PerceptionConfigError(f"{name} must be a table of name = id pairs")
+    table: dict[str, str] = {}
+    for raw_name, raw_id in value.items():
+        if not isinstance(raw_name, str) or not raw_name.strip():
+            raise PerceptionConfigError(f"{name} keys must be non-empty strings")
+        if isinstance(raw_id, bool) or not isinstance(raw_id, (str, int)):
+            raise PerceptionConfigError(f"{name}.{raw_name} must be a string or int id")
+        table[raw_name.strip().lower()] = str(raw_id)
+    return table
 
 
 def _as_sampling_hz(value: Any, name: str) -> float:
@@ -320,6 +483,11 @@ def load_perception_config_from_dict(data: dict[str, Any]) -> PerceptionConfig:
     pose = _require_section(data, "pose")
     reaction = _require_section(data, "reaction")
     proximity = _require_section(data, "proximity")
+    bag = _require_section(data, "bag")
+    xp = _require_section(data, "xp")
+    durability = _require_section(data, "durability")
+    cast = _require_section(data, "cast")
+    loot = _require_section(data, "loot")
 
     _check_keys(perception, "perception", ALLOWED_PERCEPTION_KEYS)
     _check_keys(capture, "capture", ALLOWED_CAPTURE_KEYS)
@@ -332,6 +500,11 @@ def load_perception_config_from_dict(data: dict[str, Any]) -> PerceptionConfig:
     _check_keys(pose, "pose", ALLOWED_POSE_KEYS)
     _check_keys(reaction, "reaction", ALLOWED_REACTION_KEYS)
     _check_keys(proximity, "proximity", ALLOWED_PROXIMITY_KEYS)
+    _check_keys(bag, "bag", ALLOWED_BAG_KEYS)
+    _check_keys(xp, "xp", ALLOWED_XP_KEYS)
+    _check_keys(durability, "durability", ALLOWED_DURABILITY_KEYS)
+    _check_keys(cast, "cast", ALLOWED_CAST_KEYS)
+    _check_keys(loot, "loot", ALLOWED_LOOT_KEYS)
 
     version = perception.get("schema_version")
     if (
@@ -444,6 +617,66 @@ def load_perception_config_from_dict(data: dict[str, Any]) -> PerceptionConfig:
         proximity_sampling_hz=_as_sampling_hz(
             proximity.get("sampling_hz"), "[proximity].sampling_hz"
         ),
+        bag_grid_origin=_as_point(bag.get("grid_origin"), "[bag].grid_origin"),
+        bag_columns=_as_positive_int(bag.get("columns"), "[bag].columns"),
+        bag_rows=_as_positive_int(bag.get("rows"), "[bag].rows"),
+        bag_slot_size=_as_resolution(bag.get("slot_size"), "[bag].slot_size"),
+        bag_gap=_as_non_negative_int(bag.get("gap"), "[bag].gap"),
+        bag_empty_slot_template=_as_non_empty_str(
+            bag.get("empty_slot_template"), "[bag].empty_slot_template"
+        ),
+        bag_occupied_slot_template=_as_non_empty_str(
+            bag.get("occupied_slot_template"), "[bag].occupied_slot_template"
+        ),
+        bag_min_confidence=_as_unit_float(
+            bag.get("min_confidence"), "[bag].min_confidence"
+        ),
+        bag_sampling_hz=_as_sampling_hz(bag.get("sampling_hz"), "[bag].sampling_hz"),
+        xp_bar_roi=_as_roi(xp.get("bar_roi"), "[xp].bar_roi"),
+        xp_level_roi=_as_optional_roi(xp.get("level_roi"), "[xp].level_roi"),
+        xp_min_confidence=_as_unit_float(
+            xp.get("min_confidence"), "[xp].min_confidence"
+        ),
+        xp_sampling_hz=_as_sampling_hz(xp.get("sampling_hz"), "[xp].sampling_hz"),
+        durability_slot_rois=_as_slot_rois(
+            durability.get("slot_rois"), "[durability].slot_rois"
+        ),
+        durability_min_score=_as_unit_float(
+            durability.get("min_score"), "[durability].min_score"
+        ),
+        durability_quorum_fraction=_as_unit_float(
+            durability.get("quorum_fraction"), "[durability].quorum_fraction"
+        ),
+        durability_min_confidence=_as_unit_float(
+            durability.get("min_confidence"), "[durability].min_confidence"
+        ),
+        durability_sampling_hz=_as_sampling_hz(
+            durability.get("sampling_hz"), "[durability].sampling_hz"
+        ),
+        cast_roi=_as_roi(cast.get("cast_roi"), "[cast].cast_roi"),
+        cast_border_roi=_as_optional_roi(cast.get("border_roi"), "[cast].border_roi"),
+        cast_spell_ids=_as_spell_ids(cast.get("spell_ids"), "[cast].spell_ids"),
+        cast_border_interruptible=_as_bool(
+            cast.get("border_interruptible"), "[cast].border_interruptible"
+        ),
+        cast_min_confidence=_as_unit_float(
+            cast.get("min_confidence"), "[cast].min_confidence"
+        ),
+        cast_sampling_hz=_as_sampling_hz(cast.get("sampling_hz"), "[cast].sampling_hz"),
+        cast_max_remaining_s=_as_positive_float(
+            cast.get("max_remaining_s"), "[cast].max_remaining_s"
+        ),
+        loot_sparkle_roi=_as_roi(loot.get("sparkle_roi"), "[loot].sparkle_roi"),
+        loot_min_pixels=_as_positive_int(
+            loot.get("min_pixels"), "[loot].min_pixels"
+        ),
+        loot_dominance_thresh=_as_unit_float(
+            loot.get("dominance_thresh"), "[loot].dominance_thresh"
+        ),
+        loot_min_confidence=_as_unit_float(
+            loot.get("min_confidence"), "[loot].min_confidence"
+        ),
+        loot_sampling_hz=_as_sampling_hz(loot.get("sampling_hz"), "[loot].sampling_hz"),
     )
 
 

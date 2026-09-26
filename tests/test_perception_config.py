@@ -51,6 +51,33 @@ def test_example_loads_without_touching_disk_assets() -> None:
     assert config.proximity_min_confidence == 0.5
     assert config.pose_sampling_hz == 1.0
     assert config.reaction_sampling_hz == float("inf")
+    # T-FIX-31 UI panel channels.
+    assert config.bag_grid_origin == (1600, 700)
+    assert (config.bag_columns, config.bag_rows) == (4, 4)
+    assert config.bag_slot_size == (36, 36)
+    assert config.bag_gap == 2
+    assert config.bag_empty_slot_template == "models/bag_empty_slot_template.png"
+    assert config.bag_occupied_slot_template == (
+        "models/bag_occupied_slot_template.png"
+    )
+    assert config.bag_min_confidence == 0.7
+    assert config.xp_bar_roi == (600, 1060, 720, 12)
+    assert config.xp_level_roi == (560, 1050, 36, 20)
+    assert config.xp_min_confidence == 0.5
+    assert config.durability_slot_rois == ((900, 300, 26, 26), (940, 300, 26, 26))
+    assert config.durability_min_score == 0.5
+    assert config.durability_quorum_fraction == 0.5
+    assert config.durability_min_confidence == 0.6
+    assert config.cast_roi == (560, 260, 800, 26)
+    assert config.cast_border_roi == (560, 258, 800, 3)
+    assert config.cast_spell_ids == {"shadow bolt": "686"}
+    assert config.cast_border_interruptible is False
+    assert config.cast_min_confidence == 0.6
+    assert config.cast_max_remaining_s == 30.0
+    assert config.loot_sparkle_roi == (760, 400, 320, 200)
+    assert config.loot_min_pixels == 40
+    assert config.loot_dominance_thresh == 0.6
+    assert config.loot_min_confidence == 0.9
 
 
 def test_config_is_frozen() -> None:
@@ -120,6 +147,65 @@ def test_bad_t_fix_30_channel_values_raise() -> None:
 def test_unknown_t_fix_30_channel_key_raises() -> None:
     data = _example_dict()
     data["proximity"]["bogus"] = 1  # type: ignore[index]
+    with pytest.raises(PerceptionConfigError, match="Unknown key"):
+        load_perception_config_from_dict(data)  # type: ignore[arg-type]
+
+
+def test_bad_t_fix_31_channel_values_raise() -> None:
+    data = _example_dict()
+    data["bag"]["grid_origin"] = [1, 2, 3]  # type: ignore[index]
+    with pytest.raises(PerceptionConfigError, match=r"\[bag\].grid_origin"):
+        load_perception_config_from_dict(data)  # type: ignore[arg-type]
+
+    data = _example_dict()
+    data["bag"]["gap"] = -1  # type: ignore[index]
+    with pytest.raises(PerceptionConfigError, match=r"\[bag\].gap"):
+        load_perception_config_from_dict(data)  # type: ignore[arg-type]
+
+    data = _example_dict()
+    data["durability"]["slot_rois"] = []  # type: ignore[index]
+    with pytest.raises(PerceptionConfigError, match=r"\[durability\].slot_rois"):
+        load_perception_config_from_dict(data)  # type: ignore[arg-type]
+
+    data = _example_dict()
+    data["cast"]["border_interruptible"] = "yes"  # type: ignore[index]
+    with pytest.raises(
+        PerceptionConfigError, match=r"\[cast\].border_interruptible"
+    ):
+        load_perception_config_from_dict(data)  # type: ignore[arg-type]
+
+    data = _example_dict()
+    data["cast"]["spell_ids"]["Shadow Bolt"] = 1.5  # type: ignore[index]
+    with pytest.raises(PerceptionConfigError, match=r"\[cast\].spell_ids"):
+        load_perception_config_from_dict(data)  # type: ignore[arg-type]
+
+    data = _example_dict()
+    data["loot"]["min_pixels"] = 0  # type: ignore[index]
+    with pytest.raises(PerceptionConfigError, match=r"\[loot\].min_pixels"):
+        load_perception_config_from_dict(data)  # type: ignore[arg-type]
+
+
+def test_an_absent_optional_panel_roi_is_allowed() -> None:
+    """The XP level and cast border regions are opportunistic UI elements."""
+    data = _example_dict()
+    del data["xp"]["level_roi"]  # type: ignore[index]
+    del data["cast"]["border_roi"]  # type: ignore[index]
+    config = load_perception_config_from_dict(data)  # type: ignore[arg-type]
+    assert config.xp_level_roi is None
+    assert config.cast_border_roi is None
+
+
+def test_an_empty_spell_id_table_is_allowed() -> None:
+    """No table means no id is resolvable, which drops every cast loudly."""
+    data = _example_dict()
+    data["cast"]["spell_ids"] = {}  # type: ignore[index]
+    config = load_perception_config_from_dict(data)  # type: ignore[arg-type]
+    assert config.cast_spell_ids == {}
+
+
+def test_unknown_t_fix_31_channel_key_raises() -> None:
+    data = _example_dict()
+    data["bag"]["bogus"] = 1  # type: ignore[index]
     with pytest.raises(PerceptionConfigError, match="Unknown key"):
         load_perception_config_from_dict(data)  # type: ignore[arg-type]
 

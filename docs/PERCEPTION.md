@@ -77,6 +77,12 @@ fields it feeds.
   single high-confidence reading; otherwise it is `None`, and the consumer
   falls back to its configured absolute threshold, which is the existing
   safe path.
+- **As implemented (T-FIX-31).** The gate is *per slot*, not on that mean:
+  one slot whose winning template score falls below `[bag].min_confidence`
+  makes the whole count `None`, which is the stronger guarantee the
+  paragraph above asks for. `inventory_max` is grid geometry (columns ×
+  rows) and is therefore cached for the session rather than re-derived per
+  frame, so a successful grid read yields it alongside the count.
 - Rejected alternative: accumulating "You receive item" lines from the
   Chat/events row. Chat lines scroll out of the OCR region while the region
   is occluded, so the accumulator silently drops lines and drifts. A
@@ -121,6 +127,10 @@ fields it feeds.
   interruptibility indicator and the bar's fill fraction. `spell_id` is the
   OCR'd name mapped through the spell-id table; `remaining_cast_time_s` is
   the fill fraction times the spell's known cast duration.
+- **Bounded to one bar (T-FIX-31).** The reader observes the target frame's
+  bar, so it emits either a one-entry tuple or the empty tuple; enumerating
+  every concurrent cast bar is explicitly out of scope. Interruptibility is
+  tested as a border-colour strip, so the reader is template-free.
 - Accuracy class: low to medium. Spell names are short and the cast bar is
   small, so OCR precision is the limiting factor.
 - Confidence semantics: per-cast confidence. A cast below threshold is
@@ -152,6 +162,15 @@ fields it feeds.
   repository. Until that measurement exists, the field is emitted as
   `None` and the loot view keeps raising `AdapterIncompleteError` on it.
   This is a recorded uncertainty, not an assumption.
+- **As implemented (T-FIX-31).** The reader performs the full colour
+  measurement — it reports the sparkle dominance and the sparkle-pixel
+  count — and withholds the verdict: `target_is_lootable` is `None` while
+  the module constant `perception.loot.LOOT_CHANNEL_MEASURED` is `False`.
+  That constant may only be set to `True` once a corpus exists and the
+  numbers below are recorded; it is deliberately code, not a config key, so
+  enabling an unvalidated guess cannot be a config toggle. On every path
+  that is not a measured confident positive the answer is `None`, never
+  `False`.
 
 **World pose** (table row: "World pose") — feeds `position`.
 

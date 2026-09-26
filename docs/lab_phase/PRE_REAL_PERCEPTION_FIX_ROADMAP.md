@@ -47,6 +47,12 @@ spectral gate above; T-FIX-30 adds 70 passing tests across
 and the bar-width cases appended to `tests/test_perception_target.py`.
 `ruff check src tests scripts` and `mypy src` are clean.
 
+**Latest full-suite result with T-FIX-31 in the working tree:**
+`1 failed, 2552 passed, 7 skipped, 1 xfailed`. The single failure is still the
+spectral gate above; T-FIX-31 adds 67 passing tests
+(`tests/test_perception_panels.py` 63, `tests/test_perception_config.py` 4).
+`ruff check src tests scripts` and `mypy src` (138 files) are clean.
+
 ---
 
 ## Status legend
@@ -102,8 +108,8 @@ Tier names are unchanged from the original revision of this document.
 | 1 | T-FIX-03.5 | ADR-002 GameState extension (design) | DONE |
 | 1 | T-FIX-03.6 | GameState extension (implementation) | DONE |
 | 1 | T-FIX-04 | Reference MockAdapter | PENDING |
-| 1b — Perception Contract completion (ADR-002) | T-FIX-23 | PERCEPTION.md vision channel extensions | DONE* |
-| 1b | T-FIX-21 | Adapter derivation and runtime context | DONE* |
+| 1b — Perception Contract completion (ADR-002) | T-FIX-23 | PERCEPTION.md vision channel extensions | DONE |
+| 1b | T-FIX-21 | Adapter derivation and runtime context | DONE |
 | 1b | T-FIX-24 | Per-view projection expectations (xfail split) | PENDING |
 | 1b | T-FIX-22 | perception_confidence plumbing and thresholding | PENDING |
 | 1c — Perception → runtime bridge | T-FIX-20 | Async perception port and loop scheduling | PROPOSED |
@@ -126,9 +132,9 @@ Tier names are unchanged from the original revision of this document.
 | 7 | T-FIX-26 | Farm profile as an executed cycle plan | PROPOSED |
 | 8 — Real perception port (from `hamberger`) | T-FIX-29 | Dependencies, assets, perception configuration | DONE |
 | 8 | T-FIX-27 | Port capture and readers | DONE |
-| 8 | T-FIX-28 | Real state builder → canonical `GameState` | DONE* |
-| 8 | T-FIX-30 | World pose, target distance, reaction channels | DONE* |
-| 8 | T-FIX-31 | UI panel channels (implements T-FIX-23) | PROPOSED |
+| 8 | T-FIX-28 | Real state builder → canonical `GameState` | DONE |
+| 8 | T-FIX-30 | World pose, target distance, reaction channels | DONE |
+| 8 | T-FIX-31 | UI panel channels (implements T-FIX-23) | DONE* |
 | 8 | T-FIX-32 | `RealPerceptionBackend`, gated | PROPOSED |
 
 ### Dependency graph
@@ -386,8 +392,7 @@ contracts; wiring the backend into the lab runner (T-FIX-20).
 
 ## T-FIX-23 — PERCEPTION.md vision channel extensions
 
-**Status:** DONE* — implemented and verified in the working tree; not yet
-committed.
+**Status:** DONE (commit `181de63`)
 **Depends on:** none
 **Deliverables:**
 - `docs/PERCEPTION.md`
@@ -446,8 +451,7 @@ corpus; changing the extraction methods already documented.
 
 ## T-FIX-21 — Adapter derivation and runtime context
 
-**Status:** DONE* — implemented and verified in the working tree; not yet
-committed.
+**Status:** DONE (commit `2f48240`)
 **Depends on:** T-FIX-03.6
 **Deliverables:**
 - `src/wow_bot/perception/resource_table.py` — the class-and-level →
@@ -1500,8 +1504,7 @@ input outside `actuation/drivers/`), `core/state.py` (conflicting
 
 ## T-FIX-28 — Real state builder: readers → canonical `GameState`
 
-**Status:** DONE* — implemented and verified in the working tree; not yet
-committed.
+**Status:** DONE (commit `703e7c9`)
 **Depends on:** T-FIX-27
 **Deliverables:**
 - `src/wow_bot/perception/builder.py`
@@ -1585,7 +1588,7 @@ these are T-FIX-30 channels.
 
 ## T-FIX-30 — World pose, target distance, and reaction channels
 
-**Status:** DONE* (acceptance verified in the working tree; not yet committed)
+**Status:** DONE (commit `5a4fe63`)
 **Depends on:** T-FIX-28, T-FIX-23
 **Critical path:** without `player_x`/`player_y`, seven of the eight views
 stay blocked regardless of reader quality (plan doc finding F-1).
@@ -1684,31 +1687,105 @@ model.
 
 ## T-FIX-31 — UI panel channels (implements the T-FIX-23 documentation)
 
-**Status:** PENDING (proposed)
-**Depends on:** T-FIX-27, T-FIX-23
-**Deliverables:** readers for Bag frame, XP bar, Character frame, Enemy cast
-bar, and Lootable-corpse indicator exactly as `docs/PERCEPTION.md` §2.1
-specifies, plus their calibration anchors.
+**Status:** DONE — implemented and verified in the working tree; not yet
+committed. Ratified as a task by the operator's explicit instruction to
+complete it, which is the ratification Gate G item 18 asks for.
+**Depends on:** T-FIX-27 (DONE), T-FIX-23 (DONE)
+**Deliverables:**
+- `src/wow_bot/perception/bag.py` — Bag frame channel (`inventory_count`,
+  `inventory_max`).
+- `src/wow_bot/perception/xp.py` — XP bar channel (`level_or_xp`).
+- `src/wow_bot/perception/durability.py` — Character frame channel
+  (`durability_fraction`).
+- `src/wow_bot/perception/cast.py` — Enemy cast bar channel
+  (`incoming_casts`).
+- `src/wow_bot/perception/loot.py` — Lootable-corpse indicator
+  (`target_is_lootable`).
+- `src/wow_bot/perception/_ocr.py` — the one shared OCR thresholding and
+  word-confidence implementation the four OCR channels use.
+- `src/wow_bot/perception/panels.py` — one composition site
+  (`PanelReaders`, `PanelObservations`, `observe_panels`,
+  `readers_from_config`).
+- `src/wow_bot/perception/perception_config.py` and
+  `config/perception.example.toml` — the `[bag]`, `[xp]`, `[durability]`,
+  `[cast]`, and `[loot]` sections, every key commented; the matching
+  commented block in `config/lab.example.toml`.
+- `tests/test_perception_panels.py` — 63 synthesised-frame tests.
+- `docs/PERCEPTION.md` §2.1 — the "as implemented" notes for the Bag frame,
+  Enemy cast bar, and Lootable-corpse rows.
 
 **Contract:** each reader obeys its documented confidence rule — below
 threshold the field is `None`, never partial. A partial `inventory_count`
 silently suppresses full-bag handling.
 
 **Acceptance:**
-- [ ] A synthesised-frame unit test per reader.
-- [ ] Below-threshold behaviour matches that channel's §2.1 rule.
-- [ ] The §6 precision/recall gate is measured against a corpus or recorded
-      as still unmeasurable — not faked.
+- [x] A synthesised-frame unit test per reader — every one of the five
+      channels has its own section and its own tests; no test needs a live
+      client, Tesseract, YOLO weights, or the frozen frame corpus.
+- [x] Below-threshold behaviour matches that channel's §2.1 rule — a
+      below-threshold bag slot withholds the whole count, a low-confidence
+      level withholds `level_or_xp`, a below-quorum sheet withholds
+      `durability_fraction`, a low-confidence or id-unresolvable cast yields
+      `()`, and the loot field is `None` on every path.
+- [x] The §6 precision/recall gate is measured against a corpus or recorded
+      as still unmeasurable — not faked. The corpus is still absent, so
+      every new row's target remains "No — corpus absent", and the loot
+      channel's *assertion* is gated off in code
+      (`perception.loot.LOOT_CHANNEL_MEASURED is False`) rather than
+      reported as measured.
+- [x] `ruff check src tests scripts` clean; `mypy src` clean (138 files).
+- [x] Full suite green apart from the one pre-existing spectral gate owned
+      by T-FIX-10.
 
 **Out of scope:** pose/distance (T-FIX-30); `resource_max` provenance
 (ADR-002 unresolved question 2).
+
+**Implementation notes / decisions:**
+- **The loot channel measures but does not assert.** §2.1 requires a high
+  threshold for `True` and records that no precision/recall is measurable;
+  emitting the field before that measurement would guess at exactly the
+  decision the loot consumer gates on. The reader therefore computes the
+  sparkle dominance and pixel count (observable, and tested), and withholds
+  `target_is_lootable` while `LOOT_CHANNEL_MEASURED` is `False`. That
+  constant is deliberately code rather than a config key, so enabling an
+  unvalidated guess cannot be a silent config toggle.
+- **The bag gate is per slot, not on the mean.** §2.1 says "mean per-slot
+  match score"; one slot below threshold withholds the whole count, which is
+  the stronger form of "never a partial count" the same paragraph requires.
+  `inventory_max` is grid geometry and is cached for the session.
+- **The cast channel is bounded to one bar.** It reads the target frame's
+  cast bar and emits a one-entry tuple or `()`; enumerating every concurrent
+  cast bar is deliberately not claimed. Interruptibility is a border-colour
+  strip, so the reader needs no template, and an unobserved strip drops the
+  whole cast because the interrupt is gated on that boolean directly.
+- **One shared OCR helper, and one real bug it exposed.** `_ocr.py` holds
+  the three-way thresholding and the word-confidence average.
+  `ocr_words(numeric_only=...)` exists because the T-FIX-30 pose averaging
+  rule covers only digit tokens: applied to a *spell name* it reports `0.0`
+  confidence for every readable name, which would have dropped every cast.
+  Text channels pass `numeric_only=False`; the numeric channels keep the
+  digit-token rule.
+- **Bar-fill confidence is not fabricated.** The XP bar's fill half is
+  colour segmentation and exposes no score, so — following T-FIX-28's
+  confidence-boundedness precedent — it is not given a `1.0`. The gate is
+  the measured level-OCR score, and a bar that fills its ROI edge to edge is
+  additionally treated as an unreadable, occluded measurement.
+- **No new template PNGs are committed.** The bag reader loads its two
+  templates fail-closed at construction (like `TargetReader`), and the
+  tests synthesise them in `tmp_path`; the committed `models/` set is
+  unchanged.
+- **Nothing was added to the `GameState` schema.** These five channels are
+  already-declared `GameState` fields; `PanelObservations` is a new
+  perception-side composition type, and wiring it into the state builder is
+  T-FIX-32's job.
 
 ---
 
 ## T-FIX-32 — `RealPerceptionBackend`, behind a config gate
 
 **Status:** PENDING (proposed)
-**Depends on:** T-FIX-28, T-FIX-04, T-FIX-20, T-FIX-22
+**Depends on:** T-FIX-28, T-FIX-31 (for the five panel fields), T-FIX-04,
+T-FIX-20, T-FIX-22
 **Deliverables:**
 - `src/wow_bot/perception/real_backend.py` — `RealPerceptionBackend(
   PerceptionBackend)`, composing capture → readers → builder, exposing
@@ -1977,7 +2054,7 @@ modified.
   with per-channel throttles, injected clocks, config-driven paths, and the
   single degrees→radians site (`minimap.degrees_to_facing_radians`). No reader
   owns a global capture singleton and no reader imports OS input.
-- **T-FIX-28** — DONE* (working tree; not yet committed). New
+- **T-FIX-28** — DONE (commit `703e7c9`). New
   `perception/builder.py` composes one frame through the readers into the
   canonical `GameState` and resolves every unit mismatch in one place:
   target HP `/100.0`, corner-pair → origin+size bbox, `EventCandidate`/mapping
@@ -1997,3 +2074,29 @@ modified.
 This revision also re-synchronises the tier table with the task sections:
 T-FIX-27 and T-FIX-29 were recorded as `DONE*`/`PROPOSED` after they had in
 fact been committed in `d81ce69`, and are now `DONE`.
+
+- **T-FIX-30** — DONE (commit `5a4fe63`). `perception/pose.py` (OCR of an addon
+  coordinate frame, ADR-003 decision A), `perception/proximity.py` (nameplate
+  width → yards, the single conversion site), `perception/reaction.py`
+  (nameplate text colour → reaction), and `perception/observations.py` (the
+  one composition site that turns the three readers into the builder's
+  `InjectedObservations`). `player_z` stays permanently `None`;
+  `WorldSyncView`/`StrategistView` stay blocked by design.
+- **T-FIX-31** — DONE* (working tree; not yet committed). The five UI panel
+  channels of `docs/PERCEPTION.md` §2.1: `perception/bag.py` (slot-grid
+  template match → `inventory_count`/`inventory_max`), `perception/xp.py`
+  (bar fill + level OCR → `level_or_xp`), `perception/durability.py`
+  (per-slot OCR → `durability_fraction`), `perception/cast.py` (cast bar →
+  `incoming_casts`), and `perception/loot.py` (sparkle colour → 
+  `target_is_lootable`, measured but not asserted). `perception/_ocr.py` is
+  the single shared OCR implementation and `perception/panels.py` the single
+  composition site. The five `[bag]`/`[xp]`/`[durability]`/`[cast]`/`[loot]`
+  config sections are validated and commented. `tests/test_perception_panels.py`
+  adds 63 synthesised-frame tests. Full suite:
+  `1 failed, 2552 passed, 7 skipped, 1 xfailed` — the failure is the
+  pre-existing spectral gate owned by T-FIX-10. `ruff` and `mypy` clean.
+
+This revision records T-FIX-31's completion and re-synchronises the statuses
+of T-FIX-21, T-FIX-23, T-FIX-28, and T-FIX-30, which had been committed in
+`2f48240`, `181de63`, `703e7c9`, and `5a4fe63` respectively while still
+marked `DONE*`.
