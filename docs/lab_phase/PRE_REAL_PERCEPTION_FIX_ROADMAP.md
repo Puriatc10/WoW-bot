@@ -110,7 +110,7 @@ Tier names are unchanged from the original revision of this document.
 | 1 | T-FIX-04 | Reference MockAdapter | PENDING |
 | 1b — Perception Contract completion (ADR-002) | T-FIX-23 | PERCEPTION.md vision channel extensions | DONE |
 | 1b | T-FIX-21 | Adapter derivation and runtime context | DONE |
-| 1b | T-FIX-24 | Per-view projection expectations (xfail split) | PENDING |
+| 1b | T-FIX-24 | Per-view projection expectations (xfail split) | DONE |
 | 1b | T-FIX-22 | perception_confidence plumbing and thresholding | PENDING |
 | 1c — Perception → runtime bridge | T-FIX-20 | Async perception port and loop scheduling | PROPOSED |
 | 2 — Execution Path (تیک → اکشن) | T-FIX-05 | FSM IDLE→SCANNING progression | PENDING |
@@ -134,7 +134,7 @@ Tier names are unchanged from the original revision of this document.
 | 8 | T-FIX-27 | Port capture and readers | DONE |
 | 8 | T-FIX-28 | Real state builder → canonical `GameState` | DONE |
 | 8 | T-FIX-30 | World pose, target distance, reaction channels | DONE |
-| 8 | T-FIX-31 | UI panel channels (implements T-FIX-23) | DONE* |
+| 8 | T-FIX-31 | UI panel channels (implements T-FIX-23) | DONE |
 | 8 | T-FIX-32 | `RealPerceptionBackend`, gated | PROPOSED |
 
 ### Dependency graph
@@ -549,7 +549,7 @@ runner wiring; any new vision channel.
 
 ## T-FIX-24 — Per-view projection expectations (xfail split)
 
-**Status:** PENDING
+**Status:** DONE
 **Depends on:** T-FIX-21
 **Deliverables:**
 - `tests/test_perception_adapter.py`
@@ -571,11 +571,11 @@ runner wiring; any new vision channel.
 - No test is deleted to make the suite pass; no acceptance is weakened.
 
 **Acceptance:**
-- [ ] All eight views have a named test.
-- [ ] No `xfail` marker remains.
-- [ ] `pytest` is green, including the currently failing
+- [x] All eight views have a named test.
+- [x] No `xfail` marker remains.
+- [x] `pytest` is green, including the currently failing
       `test_combat_view_structural_and_type_compatibility`.
-- [ ] No view's expected outcome is left implicit.
+- [x] No view's expected outcome is left implicit.
 
 **Out of scope:** adapter behaviour (T-FIX-21); the reference backend
 (T-FIX-04).
@@ -2082,7 +2082,7 @@ fact been committed in `d81ce69`, and are now `DONE`.
   one composition site that turns the three readers into the builder's
   `InjectedObservations`). `player_z` stays permanently `None`;
   `WorldSyncView`/`StrategistView` stay blocked by design.
-- **T-FIX-31** — DONE* (working tree; not yet committed). The five UI panel
+- **T-FIX-31** — DONE (commit `70ec219`). The five UI panel
   channels of `docs/PERCEPTION.md` §2.1: `perception/bag.py` (slot-grid
   template match → `inventory_count`/`inventory_max`), `perception/xp.py`
   (bar fill + level OCR → `level_or_xp`), `perception/durability.py`
@@ -2095,8 +2095,13 @@ fact been committed in `d81ce69`, and are now `DONE`.
   adds 63 synthesised-frame tests. Full suite:
   `1 failed, 2552 passed, 7 skipped, 1 xfailed` — the failure is the
   pre-existing spectral gate owned by T-FIX-10. `ruff` and `mypy` clean.
+- **T-FIX-24** — DONE. Replaced the single strict `xfail` end-to-end test in
+  `tests/test_perception_adapter.py` with eight named per-view projection
+  tests: four unblocked views assert successful projection without raising
+  (`WorldSyncView`, `TargetingViews`, `ReactiveView`, `FleeView`), and four
+  still-blocked views assert the exact `AdapterIncompleteError` naming the
+  unsupplied field (`resource_max` on StrategistView and CombatView;
+  `target_is_lootable` on LootView; `inventory_count` on VendorView). Zero
+  `xfail` markers remain; perception tests report 354 passed. `ruff` and
+  `mypy src` clean.
 
-This revision records T-FIX-31's completion and re-synchronises the statuses
-of T-FIX-21, T-FIX-23, T-FIX-28, and T-FIX-30, which had been committed in
-`2f48240`, `181de63`, `703e7c9`, and `5a4fe63` respectively while still
-marked `DONE*`.

@@ -14,10 +14,12 @@ from wow_bot.combat.loop import CombatStateView
 from wow_bot.executor.states import FSMState
 from wow_bot.farm.vendor import VendorStateView
 from wow_bot.perception.adapter import (
+    AdapterDerivationConfig,
     AdapterIncompleteError,
     GameStateAdapter,
     fraction_to_percent,
 )
+from wow_bot.perception.context import StaticRuntimeContext
 from wow_bot.perception.protocol import PerceptionBackend
 from wow_bot.perception.views import (
     CombatView,
@@ -29,7 +31,7 @@ from wow_bot.perception.views import (
     VendorView,
     WorldSyncView,
 )
-from wow_bot.shared.interfaces import GameState, TargetInfo
+from wow_bot.shared.interfaces import EnemyInfo, GameState, TargetInfo
 from wow_bot.world.sync import GameStateLike
 
 
@@ -662,51 +664,156 @@ def test_perception_backend_abc() -> None:
 
 
 # ---------------------------------------------------------------------------
-# 9. End-to-End Projection From a Canonical GameState
+# 9. Per-View Projection Expectations (T-FIX-24)
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "A strictly canonical GameState cannot supply several fields that the "
-        "consumer Protocols declare non-Optional (player_z, resource_max, "
-        "inventory_count, level_or_xp, target_in_range, gcd_ready, adds_count, "
-        "target_is_alive, target_is_lootable, threat, is_attackable, is_alive, "
-        "is_in_combat_with_self). Every projection therefore raises "
-        "AdapterIncompleteError. See ADR-001, section 'The adapter cannot "
-        "produce a successful projection today'. Remove this xfail once "
-        "GameState is extended or a supplementary data channel exists, without "
-        "which T-FIX-04 (MockPerceptionAdapter) has nothing to project."
-    ),
-)
-def test_canonical_game_state_end_to_end_projection() -> None:
-    """Every projection must succeed end-to-end starting from a canonical GameState.
+def _make_canonical_snapshot(
+    *,
+    entities: tuple[EnemyInfo, ...] | None = None,
+    target: TargetInfo | None = None,
+    player_z: float = 1.5,
+) -> GameState:
+    """Construct a canonical extended GameState without monkeypatching or fakes.
 
-    The fixture below uses only fields defined in ``wow_bot.shared.interfaces``:
-    no extra attributes, no fakes, no monkeypatched attributes. It carries a
-    target, matching the shape ``MockPerception`` emits during combat.
+    Uses only the fields defined in ``wow_bot.shared.interfaces.GameState`` and
+    ``EnemyInfo``, reflecting the post-ADR-002 extended schema.
     """
-    state = GameState(
+    if target is None:
+        target = TargetInfo(
+            name="TargetMob",
+            hp_pct=0.50,
+            reaction="hostile",
+            distance_estimate=10.0,
+        )
+    if entities is None:
+        entities = (
+            EnemyInfo(
+                bbox=(10, 20, 30, 40),
+                confidence=0.95,
+                distance_estimate=10.0,
+                entity_id="mob-1",
+                kind="mob",
+                x=110.0,
+                y=210.0,
+                z=1.5,
+                hp_fraction=0.50,
+                threat=100.0,
+                is_attackable=True,
+                is_alive=True,
+                is_in_combat_with_self=True,
+            ),
+        )
+    return GameState(
         timestamp=1000.0,
         hp_pct=0.85,
         mana_pct=0.60,
         position=(100.0, 200.0),
         facing=1.57,
         in_combat=True,
-        target=TargetInfo(
-            name="TargetMob", hp_pct=0.50, reaction="hostile", distance_estimate=10.0
-        ),
-        enemies=[],
+        target=target,
+        enemies=list(entities),
         events=[],
+        player_z=player_z,
+        entities=entities,
     )
-    adapter = GameStateAdapter(state)
 
-    assert isinstance(adapter.to_world_sync_view(), WorldSyncView)
-    assert isinstance(adapter.to_strategist_view(fsm_state="IDLE"), StrategistView)
-    assert isinstance(adapter.to_combat_view(), CombatView)
-    assert len(adapter.to_targeting_views()) == 1
-    assert isinstance(adapter.to_reactive_view(), ReactiveView)
-    assert isinstance(adapter.to_flee_view(), FleeView)
-    assert isinstance(adapter.to_loot_view(), LootView)
-    assert isinstance(adapter.to_vendor_view(), VendorView)
+
+def _canonical_adapter(
+    state: GameState | None = None,
+) -> GameStateAdapter:
+    if state is None:
+        state = _make_canonical_snapshot()
+    return GameStateAdapter(
+        state,
+        config=AdapterDerivationConfig(engage_distance_units=30.0),
+        context=StaticRuntimeContext(),
+    )
+
+
+def test_projection_to_world_sync_view_succeeds() -> None:
+    adapter = _canonical_adapter()
+    view = adapter.to_world_sync_view()
+    assert isinstance(view, WorldSyncView)
+    assert isinstance(view, GameStateLike)
+    assert view.player_x == 100.0
+    assert view.player_y == 200.0
+    assert view.player_z == 1.5
+    assert view.target_entity_id == "TargetMob"
+    assert len(view.entities) == 1
+
+
+def test_projection_to_targeting_views_succeeds() -> None:
+    adapter = _canonical_adapter()
+    views = adapter.to_targeting_views()
+    assert len(views) == 1
+    t_view = views[0]
+    assert isinstance(t_view, TargetView)
+    assert t_view.entity_id == "mob-1"
+    assert t_view.distance == 10.0
+    assert t_view.threat == 100.0
+    assert t_view.hp_percent == 50.0
+    assert t_view.is_attackable is True
+    assert t_view.is_alive is True
+    assert t_view.is_in_combat_with_self is True
+
+
+def test_projection_to_reactive_view_succeeds() -> None:
+    adapter = _canonical_adapter()
+    view = adapter.to_reactive_view()
+    assert isinstance(view, ReactiveView)
+    assert view.self_hp_percent == 85.0
+    assert view.self_in_combat is True
+    assert view.target_in_range is True
+    assert view.self_x == 100.0
+    assert view.self_y == 200.0
+    assert view.incoming_casts == ()
+    assert view.current_target_id == "TargetMob"
+
+
+def test_projection_to_flee_view_succeeds() -> None:
+    adapter = _canonical_adapter()
+    view = adapter.to_flee_view()
+    assert isinstance(view, FleeView)
+    assert view.self_hp_percent == 85.0
+    assert view.self_x == 100.0
+    assert view.self_y == 200.0
+    assert view.adds_count == 1
+    assert view.current_target_id == "TargetMob"
+
+
+def test_projection_to_strategist_view_fails_loud_on_missing_resource_max() -> None:
+    adapter = _canonical_adapter()
+    with pytest.raises(
+        AdapterIncompleteError,
+        match="StrategistView requires non-Optional resource_max",
+    ):
+        adapter.to_strategist_view(fsm_state=FSMState.IDLE)
+
+
+def test_projection_to_combat_view_fails_loud_on_missing_resource_max() -> None:
+    adapter = _canonical_adapter()
+    with pytest.raises(
+        AdapterIncompleteError,
+        match="CombatStateView requires non-Optional resource_max",
+    ):
+        adapter.to_combat_view()
+
+
+def test_projection_to_loot_view_fails_loud_on_missing_target_is_lootable() -> None:
+    adapter = _canonical_adapter()
+    with pytest.raises(
+        AdapterIncompleteError,
+        match="LootStateView requires non-Optional target_is_lootable",
+    ):
+        adapter.to_loot_view()
+
+
+def test_projection_to_vendor_view_fails_loud_on_missing_inventory_count() -> None:
+    adapter = _canonical_adapter()
+    with pytest.raises(
+        AdapterIncompleteError,
+        match="VendorStateView requires non-Optional inventory_count",
+    ):
+        adapter.to_vendor_view()
+
