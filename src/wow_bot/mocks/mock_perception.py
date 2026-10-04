@@ -543,7 +543,7 @@ class MockPerception:
 
         target = TargetInfo(
             name=f"MockEnemy_{i}",
-            hp_pct=float(self._rng.uniform(0.2, 1.0)),
+            hp_pct=0.0 if self._scenario == "dead_target_scenario" else float(self._rng.uniform(0.2, 1.0)),
             reaction="hostile",
             distance_estimate=float(self._rng.uniform(5.0, 30.0)),
         )
