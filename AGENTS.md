@@ -222,6 +222,27 @@ After T-FIX-03.6 merges, this exception is closed. Any future edit to a
 module that STRATEGY A treats as FROZEN requires its own explicit
 exception recorded in this file.
 
+### 5.7 Bounded exception: T-FIX-22 perception_confidence plumbing
+
+The task T-FIX-22 authorizes a single, bounded exception to STRATEGY A.
+Its sole purpose is to populate `perception_confidence` in
+`src/wow_bot/mocks/mock_perception.py` from the component RNG, and
+deliberately emit a low-confidence field as `None` on some frames so the
+fail-loud path stays covered by tests. This is the only file scope of this
+exception in frozen pre-lab modules: `src/wow_bot/mocks/mock_perception.py`.
+
+It does NOT authorize renaming or removing any existing field, changing
+any existing field's type or default, changing the positional argument order
+of any existing constructor, modifying `MetaState`, `Strategy`, or
+`TargetInfo`, changing any consumer Protocol, or changing
+`PerceptionBackend.snapshot()`, `main.perception_loop`, or
+`lab/runner_v2.py`. It does NOT authorize changes to NON_CLAIMS wording,
+the T12.0 scope split, the aggregate contract, or any Phase 12 artifact.
+
+After T-FIX-22 merges, this exception is closed. Any future edit to a
+module that STRATEGY A treats as FROZEN requires its own explicit
+exception recorded in this file.
+
 ### 5.2 Source of Tasks
 
 Tasks are defined exclusively in `LAB_PHASE_ROADMAP.md`. Do not invent

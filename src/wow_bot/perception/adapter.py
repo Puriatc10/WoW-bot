@@ -19,7 +19,7 @@ views and may be None.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from decimal import ROUND_HALF_EVEN, Decimal
 from typing import Any
 
@@ -82,6 +82,43 @@ class AdapterDerivationConfig:
             )
 
 
+DEFAULT_CONFIDENCE_THRESHOLDS: dict[str, float] = {
+    "inventory_count": 0.7,
+    "inventory_max": 0.7,
+    "level_or_xp": 0.5,
+    "durability_fraction": 0.6,
+    "target_is_lootable": 0.9,
+    "position": 0.6,
+}
+
+
+@dataclass(frozen=True)
+class AdapterConfidenceConfig:
+    """Thresholds for perception field confidence scores in [0.0, 1.0].
+
+    Absence from snapshot.perception_confidence means 'not attempted' and
+    the value is taken as-is (honoring ADR-002 Decision 4).
+    Presence with score >= threshold is accepted.
+    Presence with score < threshold means 'seen but uncertain' and surfaces
+    as None in the adapted view (honoring docs/PERCEPTION.md:33).
+    """
+
+    default_threshold: float = 0.5
+    thresholds: dict[str, float] = field(
+        default_factory=lambda: dict(DEFAULT_CONFIDENCE_THRESHOLDS)
+    )
+
+    def get_threshold(self, field_path: str) -> float:
+        """Return the threshold for a given field path."""
+        return self.thresholds.get(field_path, self.default_threshold)
+
+    def is_confident(self, field_path: str, score: float | None) -> bool:
+        """Return True if score meets or exceeds the field's threshold."""
+        if score is None:
+            return True
+        return score >= self.get_threshold(field_path)
+
+
 @dataclass(frozen=True)
 class GameStateAdapter:
     """Pure adapter projecting a canonical GameState into consumer views.
@@ -102,8 +139,40 @@ class GameStateAdapter:
 
     snapshot: GameState
     config: AdapterDerivationConfig | None = None
+    confidence_config: AdapterConfidenceConfig | None = None
     context: RuntimeContext | None = None
     resource_table: ResourceTable = EMPTY_RESOURCE_TABLE
+
+    # ------------------------------------------------------------------
+    # Confidence thresholding (ADR-002 Decision 4, docs/PERCEPTION.md:33)
+    # ------------------------------------------------------------------
+
+    def _is_confident(self, field_path: str) -> bool:
+        """Return False if field_path has a recorded confidence below threshold."""
+        conf_map = getattr(self.snapshot, "perception_confidence", None)
+        if not isinstance(conf_map, dict):
+            return True
+        if field_path not in conf_map:
+            return True
+        score = conf_map[field_path]
+        if score is None:
+            return True
+        try:
+            val = float(score)
+        except (TypeError, ValueError):
+            return False
+        cfg = (
+            self.confidence_config
+            if self.confidence_config is not None
+            else AdapterConfidenceConfig()
+        )
+        return cfg.is_confident(field_path, val)
+
+    def _get_confident_field(self, field_path: str, default: Any = None) -> Any:
+        """Return snapshot attribute value if confident, else default (typically None)."""
+        if not self._is_confident(field_path):
+            return default
+        return getattr(self.snapshot, field_path, default)
 
     # ------------------------------------------------------------------
     # Derived quantities (ADR-002 "derived" class; never stored on GameState)
@@ -117,6 +186,8 @@ class GameStateAdapter:
         unavailable, so the fail-loud path is preserved.
         """
         if self.config is None:
+            return None
+        if not self._is_confident("target.distance_estimate"):
             return None
         raw = getattr(target, "distance_estimate", None)
         if raw is None:
@@ -148,6 +219,8 @@ class GameStateAdapter:
         ``TargetInfo.hp_pct`` is already canonical, so no extra channel is
         needed: a target at 0 HP is dead.
         """
+        if not self._is_confident("target.hp_pct"):
+            return None
         return self._alive_from_hp_fraction(getattr(target, "hp_pct", None))
 
     def _derive_adds_count(self) -> int | None:
@@ -188,7 +261,7 @@ class GameStateAdapter:
         than guessed -- a fabricated maximum silently rescales every
         resource-dependent consumer decision.
         """
-        raw_level = getattr(self.snapshot, "level_or_xp", None)
+        raw_level = self._get_confident_field("level_or_xp")
         level: int | None = None
         if raw_level is not None:
             try:
@@ -257,6 +330,10 @@ class GameStateAdapter:
 
     def _extract_required_coords(self, view_name: str) -> tuple[float, float]:
         """Extract (x, y) coordinates from snapshot or raise AdapterIncompleteError."""
+        if not self._is_confident("position"):
+            raise AdapterIncompleteError(
+                f"{view_name} requires non-Optional position coordinates (x, y)"
+            )
         pos = getattr(self.snapshot, "position", None)
         if pos is None or not isinstance(pos, (tuple, list)) or len(pos) < 2:
             raise AdapterIncompleteError(
@@ -277,7 +354,7 @@ class GameStateAdapter:
         """
         x, y = self._extract_required_coords("WorldSyncView")
 
-        z = getattr(self.snapshot, "player_z", None)
+        z = self._get_confident_field("player_z")
         if z is None:
             raise AdapterIncompleteError("WorldSyncView requires non-Optional player_z")
         z = float(z)
@@ -291,7 +368,8 @@ class GameStateAdapter:
         target = getattr(self.snapshot, "target", None)
         target_id: str | None = None
         if target is not None and getattr(target, "name", None):
-            target_id = str(target.name)
+            if self._is_confident("target.name"):
+                target_id = str(target.name)
         else:
             raw_tid = getattr(self.snapshot, "target_entity_id", None)
             if raw_tid is not None:
@@ -319,11 +397,11 @@ class GameStateAdapter:
         except (ValueError, TypeError) as exc:
             raise AdapterIncompleteError(f"Invalid fsm_state for StrategistView: {fsm_state}") from exc
 
-        hp = fraction_to_percent(getattr(self.snapshot, "hp_pct", None))
+        hp = fraction_to_percent(self._get_confident_field("hp_pct"))
         if hp is None:
             raise AdapterIncompleteError("StrategistView requires non-Optional self_hp_percent")
 
-        mana = fraction_to_percent(getattr(self.snapshot, "mana_pct", None))
+        mana = fraction_to_percent(self._get_confident_field("mana_pct"))
         if mana is None:
             raise AdapterIncompleteError("StrategistView requires non-Optional resource")
 
@@ -333,21 +411,26 @@ class GameStateAdapter:
         if res_max is None:
             raise AdapterIncompleteError("StrategistView requires non-Optional resource_max")
 
-        inv = getattr(self.snapshot, "inventory_count", None)
+        inv = self._get_confident_field("inventory_count")
         if inv is None:
             raise AdapterIncompleteError("StrategistView requires non-Optional inventory_count")
 
-        lvl = getattr(self.snapshot, "level_or_xp", None)
+        lvl = self._get_confident_field("level_or_xp")
         if lvl is None:
             raise AdapterIncompleteError("StrategistView requires non-Optional level_or_xp")
 
-        z = getattr(self.snapshot, "player_z", None)
+        z = self._get_confident_field("player_z")
         if z is None:
             raise AdapterIncompleteError("StrategistView requires non-Optional player_z")
         z = float(z)
         target = getattr(self.snapshot, "target", None)
-        target_id = str(target.name) if target and getattr(target, "name", None) else None
-        target_hp = fraction_to_percent(getattr(target, "hp_pct", None)) if target else None
+        target_id: str | None = None
+        target_hp: float | None = None
+        if target:
+            if getattr(target, "name", None) and self._is_confident("target.name"):
+                target_id = str(target.name)
+            if self._is_confident("target.hp_pct"):
+                target_hp = fraction_to_percent(getattr(target, "hp_pct", None))
 
         return StrategistView(
             player_x=x,
@@ -370,11 +453,11 @@ class GameStateAdapter:
         """
         x, y = self._extract_required_coords("CombatView")
 
-        hp = fraction_to_percent(getattr(self.snapshot, "hp_pct", None))
+        hp = fraction_to_percent(self._get_confident_field("hp_pct"))
         if hp is None:
             raise AdapterIncompleteError("CombatStateView requires non-Optional self_hp_percent")
 
-        mana = fraction_to_percent(getattr(self.snapshot, "mana_pct", None))
+        mana = fraction_to_percent(self._get_confident_field("mana_pct"))
         if mana is None:
             raise AdapterIncompleteError("CombatStateView requires non-Optional resource")
 
@@ -397,11 +480,13 @@ class GameStateAdapter:
         if gcd is None:
             raise AdapterIncompleteError("CombatStateView requires non-Optional gcd_ready")
 
-        target_hp = (
-            fraction_to_percent(getattr(target, "hp_pct", None))
-            if target
-            else getattr(self.snapshot, "target_hp_percent", None)
-        )
+        target_hp: float | None = None
+        if target and self._is_confident("target.hp_pct"):
+            target_hp = fraction_to_percent(getattr(target, "hp_pct", None))
+        elif not target:
+            raw_snap_target_hp = getattr(self.snapshot, "target_hp_percent", None)
+            if self._is_confident("target_hp_percent") and self._is_confident("target.hp_pct"):
+                target_hp = raw_snap_target_hp
         if target_hp is None:
             raise AdapterIncompleteError("CombatStateView requires non-Optional target_hp_percent")
 
@@ -460,18 +545,20 @@ class GameStateAdapter:
             return ()
 
         target_name = getattr(target, "name", None)
-        if target_name is None:
+        if target_name is None or not self._is_confident("target.name"):
             raise AdapterIncompleteError("TargetEntityLike requires non-Optional entity_id")
 
         dist = getattr(target, "distance_estimate", getattr(self.snapshot, "distance", None))
-        if dist is None:
+        if dist is None or not self._is_confident("target.distance_estimate"):
             raise AdapterIncompleteError("TargetEntityLike requires non-Optional distance")
 
         threat = getattr(target, "threat", getattr(self.snapshot, "threat", None))
-        if threat is None:
+        if threat is None or not self._is_confident("target.threat"):
             raise AdapterIncompleteError("TargetEntityLike requires non-Optional threat")
 
         hp_raw = getattr(target, "hp_pct", getattr(self.snapshot, "hp_percent", None))
+        if not self._is_confident("target.hp_pct"):
+            hp_raw = None
         hp_pct = fraction_to_percent(hp_raw)
         if hp_pct is None:
             raise AdapterIncompleteError("TargetEntityLike requires non-Optional hp_percent")
@@ -481,6 +568,8 @@ class GameStateAdapter:
             raise AdapterIncompleteError("TargetEntityLike requires non-Optional is_attackable")
 
         is_alive = getattr(target, "is_alive", getattr(self.snapshot, "is_alive", None))
+        if is_alive is None:
+            is_alive = self._alive_from_hp_fraction(hp_raw)
         if is_alive is None:
             raise AdapterIncompleteError("TargetEntityLike requires non-Optional is_alive")
 
@@ -509,11 +598,11 @@ class GameStateAdapter:
         """
         x, y = self._extract_required_coords("ReactiveView")
 
-        hp = fraction_to_percent(getattr(self.snapshot, "hp_pct", None))
+        hp = fraction_to_percent(self._get_confident_field("hp_pct"))
         if hp is None:
             raise AdapterIncompleteError("ReactiveStateView requires non-Optional self_hp_percent")
 
-        in_combat = getattr(self.snapshot, "in_combat", None)
+        in_combat = self._get_confident_field("in_combat")
         if in_combat is None:
             raise AdapterIncompleteError("ReactiveStateView requires non-Optional self_in_combat")
 
@@ -547,7 +636,7 @@ class GameStateAdapter:
         """
         x, y = self._extract_required_coords("FleeView")
 
-        hp = fraction_to_percent(getattr(self.snapshot, "hp_pct", None))
+        hp = fraction_to_percent(self._get_confident_field("hp_pct"))
         if hp is None:
             raise AdapterIncompleteError("FleeStateView requires non-Optional self_hp_percent")
 
@@ -587,24 +676,26 @@ class GameStateAdapter:
         if alive is None:
             raise AdapterIncompleteError("LootStateView requires non-Optional target_is_alive")
 
-        lootable = getattr(self.snapshot, "target_is_lootable", None)
+        lootable = self._get_confident_field("target_is_lootable")
         if lootable is None:
             raise AdapterIncompleteError("LootStateView requires non-Optional target_is_lootable")
 
-        inv = getattr(self.snapshot, "inventory_count", None)
+        inv = self._get_confident_field("inventory_count")
         if inv is None:
             raise AdapterIncompleteError("LootStateView requires non-Optional inventory_count")
 
         target = getattr(self.snapshot, "target", None)
         target_id = str(target.name) if target and getattr(target, "name", None) else None
-        target_dist = (
-            getattr(target, "distance_estimate", getattr(self.snapshot, "target_distance", None))
-            if target
-            else getattr(self.snapshot, "target_distance", None)
-        )
+        target_dist: float | None = None
+        if self._is_confident("target.distance_estimate"):
+            target_dist = (
+                getattr(target, "distance_estimate", getattr(self.snapshot, "target_distance", None))
+                if target
+                else getattr(self.snapshot, "target_distance", None)
+            )
         target_x = getattr(self.snapshot, "target_x", None)
         target_y = getattr(self.snapshot, "target_y", None)
-        inv_max = getattr(self.snapshot, "inventory_max", None)
+        inv_max = self._get_confident_field("inventory_max")
 
         return LootView(
             target_is_alive=bool(alive),
@@ -626,11 +717,11 @@ class GameStateAdapter:
         """
         x, y = self._extract_required_coords("VendorView")
 
-        inv = getattr(self.snapshot, "inventory_count", None)
+        inv = self._get_confident_field("inventory_count")
         if inv is None:
             raise AdapterIncompleteError("VendorStateView requires non-Optional inventory_count")
 
-        dur = getattr(self.snapshot, "durability_fraction", None)
+        dur = self._get_confident_field("durability_fraction")
 
         return VendorView(
             self_x=x,

@@ -24,7 +24,10 @@ import math
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from wow_bot.perception.adapter import AdapterConfidenceConfig
 
 __all__ = [
     "PERCEPTION_SCHEMA_VERSION",
@@ -60,6 +63,7 @@ ALLOWED_TOP_LEVEL_KEYS: frozenset[str] = frozenset(
         "durability",
         "cast",
         "loot",
+        "confidence",
     }
 )
 
@@ -224,6 +228,19 @@ ALLOWED_LOOT_KEYS: frozenset[str] = frozenset(
     }
 )
 
+#: T-FIX-22 perception_confidence thresholds.
+ALLOWED_CONFIDENCE_KEYS: frozenset[str] = frozenset(
+    {
+        "default_threshold",
+        "inventory_count",
+        "inventory_max",
+        "level_or_xp",
+        "durability_fraction",
+        "target_is_lootable",
+        "position",
+    }
+)
+
 
 @dataclass(frozen=True)
 class PerceptionConfig:
@@ -303,6 +320,18 @@ class PerceptionConfig:
     loot_dominance_thresh: float
     loot_min_confidence: float
     loot_sampling_hz: float
+    # T-FIX-22 perception_confidence thresholds.
+    confidence_default_threshold: float
+    confidence_thresholds: dict[str, float]
+
+    def to_adapter_confidence_config(self) -> AdapterConfidenceConfig:
+        """Convert perception confidence configuration to adapter confidence config."""
+        from wow_bot.perception.adapter import AdapterConfidenceConfig
+
+        return AdapterConfidenceConfig(
+            default_threshold=self.confidence_default_threshold,
+            thresholds=dict(self.confidence_thresholds),
+        )
 
 
 def _require_section(data: dict[str, Any], name: str) -> dict[str, Any]:
@@ -488,6 +517,7 @@ def load_perception_config_from_dict(data: dict[str, Any]) -> PerceptionConfig:
     durability = _require_section(data, "durability")
     cast = _require_section(data, "cast")
     loot = _require_section(data, "loot")
+    confidence = _require_section(data, "confidence")
 
     _check_keys(perception, "perception", ALLOWED_PERCEPTION_KEYS)
     _check_keys(capture, "capture", ALLOWED_CAPTURE_KEYS)
@@ -505,6 +535,7 @@ def load_perception_config_from_dict(data: dict[str, Any]) -> PerceptionConfig:
     _check_keys(durability, "durability", ALLOWED_DURABILITY_KEYS)
     _check_keys(cast, "cast", ALLOWED_CAST_KEYS)
     _check_keys(loot, "loot", ALLOWED_LOOT_KEYS)
+    _check_keys(confidence, "confidence", ALLOWED_CONFIDENCE_KEYS)
 
     version = perception.get("schema_version")
     if (
@@ -524,6 +555,15 @@ def load_perception_config_from_dict(data: dict[str, Any]) -> PerceptionConfig:
             raise PerceptionConfigError(
                 "[target].known_enemies entries must be stripped non-empty strings"
             )
+
+    default_thresh = _as_unit_float(
+        confidence.get("default_threshold"), "[confidence].default_threshold"
+    )
+    conf_thresholds: dict[str, float] = {}
+    for c_key, c_val in confidence.items():
+        if c_key == "default_threshold":
+            continue
+        conf_thresholds[c_key] = _as_unit_float(c_val, f"[confidence].{c_key}")
 
     return PerceptionConfig(
         schema_version=version,
@@ -677,6 +717,8 @@ def load_perception_config_from_dict(data: dict[str, Any]) -> PerceptionConfig:
             loot.get("min_confidence"), "[loot].min_confidence"
         ),
         loot_sampling_hz=_as_sampling_hz(loot.get("sampling_hz"), "[loot].sampling_hz"),
+        confidence_default_threshold=default_thresh,
+        confidence_thresholds=conf_thresholds,
     )
 
 

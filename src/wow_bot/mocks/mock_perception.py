@@ -325,6 +325,35 @@ class MockPerception:
             target_x = None
             target_y = None
 
+        # T-FIX-22: populate perception_confidence from component RNG.
+        confidence: dict[str, float] = {
+            "hp_pct": float(self._rng.uniform(0.85, 1.0)),
+            "mana_pct": float(self._rng.uniform(0.85, 1.0)),
+            "position": float(self._rng.uniform(0.85, 1.0)),
+            "facing": float(self._rng.uniform(0.85, 1.0)),
+            "in_combat": 1.0,
+        }
+        if target is not None:
+            confidence["target.name"] = float(self._rng.uniform(0.85, 1.0))
+            confidence["target.hp_pct"] = float(self._rng.uniform(0.80, 1.0))
+            confidence["target.reaction"] = float(self._rng.uniform(0.80, 1.0))
+            confidence["target.distance_estimate"] = float(self._rng.uniform(0.80, 1.0))
+
+        # Deliberately emit a low-confidence field as None on some frames so the
+        # fail-loud path stays covered.
+        inventory_count: int | None = None
+        inventory_max: int | None = None
+        if self._rng.uniform(0.0, 1.0) < 0.20:
+            bag_conf = float(self._rng.uniform(0.40, 0.95))
+            confidence["inventory_count"] = bag_conf
+            confidence["inventory_max"] = bag_conf
+            if bag_conf >= 0.70:
+                inventory_count = int(self._rng.integers(0, 17))
+                inventory_max = 16
+            else:
+                inventory_count = None
+                inventory_max = None
+
         return GameState(
             timestamp=ts,
             hp_pct=self._hp,
@@ -339,9 +368,9 @@ class MockPerception:
             target_x=target_x,
             target_y=target_y,
             entities=tuple(enemies),  # same synthetic mobs, world-sync channel
-            perception_confidence={},  # map population is task T-FIX-22
-            inventory_count=None,  # channel-pending: "Bag frame"
-            inventory_max=None,  # channel-pending: "Bag frame"
+            perception_confidence=confidence,
+            inventory_count=inventory_count,
+            inventory_max=inventory_max,
             level_or_xp=None,  # channel-pending: "XP bar"
             durability_fraction=None,  # channel-pending: "Character frame"
             target_is_lootable=None,  # channel-pending: "Lootable-corpse indicator"

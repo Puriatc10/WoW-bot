@@ -78,6 +78,18 @@ def test_example_loads_without_touching_disk_assets() -> None:
     assert config.loot_min_pixels == 40
     assert config.loot_dominance_thresh == 0.6
     assert config.loot_min_confidence == 0.9
+    # T-FIX-22 confidence thresholds.
+    assert config.confidence_default_threshold == 0.5
+    assert config.confidence_thresholds["inventory_count"] == 0.7
+    assert config.confidence_thresholds["inventory_max"] == 0.7
+    assert config.confidence_thresholds["level_or_xp"] == 0.5
+    assert config.confidence_thresholds["durability_fraction"] == 0.6
+    assert config.confidence_thresholds["target_is_lootable"] == 0.9
+    assert config.confidence_thresholds["position"] == 0.6
+    adapter_conf = config.to_adapter_confidence_config()
+    assert adapter_conf.default_threshold == 0.5
+    assert adapter_conf.get_threshold("inventory_count") == 0.7
+    assert adapter_conf.get_threshold("unmapped_field") == 0.5
 
 
 def test_config_is_frozen() -> None:
@@ -207,6 +219,25 @@ def test_unknown_t_fix_31_channel_key_raises() -> None:
     data = _example_dict()
     data["bag"]["bogus"] = 1  # type: ignore[index]
     with pytest.raises(PerceptionConfigError, match="Unknown key"):
+        load_perception_config_from_dict(data)  # type: ignore[arg-type]
+
+
+def test_unknown_confidence_key_raises() -> None:
+    data = _example_dict()
+    data["confidence"]["bogus"] = 0.5  # type: ignore[index]
+    with pytest.raises(PerceptionConfigError, match=r"\[confidence\].bogus"):
+        load_perception_config_from_dict(data)  # type: ignore[arg-type]
+
+
+def test_bad_confidence_values_raise() -> None:
+    data = _example_dict()
+    data["confidence"]["default_threshold"] = 1.5  # type: ignore[index]
+    with pytest.raises(PerceptionConfigError, match=r"\[confidence\].default_threshold"):
+        load_perception_config_from_dict(data)  # type: ignore[arg-type]
+
+    data = _example_dict()
+    data["confidence"]["inventory_count"] = -0.1  # type: ignore[index]
+    with pytest.raises(PerceptionConfigError, match=r"\[confidence\].inventory_count"):
         load_perception_config_from_dict(data)  # type: ignore[arg-type]
 
 

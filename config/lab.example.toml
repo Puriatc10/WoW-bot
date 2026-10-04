@@ -109,3 +109,13 @@ log_level = "INFO"
 # dominance_thresh = 0.6
 # min_confidence = 0.9
 # sampling_hz = 1.0
+# T-FIX-22 perception_confidence thresholds
+# [confidence]
+# default_threshold = 0.5
+# inventory_count = 0.7
+# inventory_max = 0.7
+# level_or_xp = 0.5
+# durability_fraction = 0.6
+# target_is_lootable = 0.9
+# position = 0.6
+

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from wow_bot.perception.adapter import (
+    AdapterConfidenceConfig,
     AdapterDerivationConfig,
     AdapterIncompleteError,
     GameStateAdapter,
@@ -75,6 +76,7 @@ __all__ = [
     "PERCEPTION_SCHEMA_VERSION",
     "YOLO_EXTRA_NAME",
     "YOLO_OFFLINE_ENV",
+    "AdapterConfidenceConfig",
     "AdapterDerivationConfig",
     "AdapterIncompleteError",
     "BagFrameReader",

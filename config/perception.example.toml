@@ -216,3 +216,22 @@ sampling_hz = 1.0
 [cast.spell_ids]
 # One entry per spell the reactive layer may interrupt
 "Shadow Bolt" = 686
+
+# T-FIX-22 Minimum confidence required for perception observations (0.0 to 1.0).
+# Observations with confidence below their threshold surface as None.
+[confidence]
+# Default minimum confidence for observations without a specific threshold
+default_threshold = 0.5
+# Minimum confidence for bag slot inventory counts
+inventory_count = 0.7
+# Minimum confidence for total bag capacity
+inventory_max = 0.7
+# Minimum confidence for level / xp readouts
+level_or_xp = 0.5
+# Minimum confidence for character sheet durability fraction
+durability_fraction = 0.6
+# Minimum confidence for lootable corpse sparkle indicator
+target_is_lootable = 0.9
+# Minimum confidence for player position coordinates
+position = 0.6
+

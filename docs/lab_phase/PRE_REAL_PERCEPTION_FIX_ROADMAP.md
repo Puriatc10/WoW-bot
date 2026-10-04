@@ -111,7 +111,7 @@ Tier names are unchanged from the original revision of this document.
 | 1b — Perception Contract completion (ADR-002) | T-FIX-23 | PERCEPTION.md vision channel extensions | DONE |
 | 1b | T-FIX-21 | Adapter derivation and runtime context | DONE |
 | 1b | T-FIX-24 | Per-view projection expectations (xfail split) | DONE |
-| 1b | T-FIX-22 | perception_confidence plumbing and thresholding | PENDING |
+| 1b | T-FIX-22 | perception_confidence plumbing and thresholding | DONE |
 | 1c — Perception → runtime bridge | T-FIX-20 | Async perception port and loop scheduling | PROPOSED |
 | 2 — Execution Path (تیک → اکشن) | T-FIX-05 | FSM IDLE→SCANNING progression | PENDING |
 | 2 | T-FIX-06 | Reflex/Watchdog lifecycle | PENDING |
@@ -584,7 +584,7 @@ runner wiring; any new vision channel.
 
 ## T-FIX-22 — perception_confidence plumbing and thresholding
 
-**Status:** PENDING
+**Status:** DONE
 **Depends on:** T-FIX-03.6 (map exists), T-FIX-21 (deriving adapter)
 **Deliverables:**
 - `src/wow_bot/mocks/mock_perception.py` — populate
@@ -611,13 +611,13 @@ runner wiring; any new vision channel.
 - No global RNG.
 
 **Acceptance:**
-- [ ] Test: a low-confidence `inventory_count` yields `None` in
+- [x] Test: a low-confidence `inventory_count` yields `None` in
       `VendorView`, and the projection raises `AdapterIncompleteError`.
-- [ ] Test: `inventory_count == 0` with good confidence stays `0` and does
+- [x] Test: `inventory_count == 0` with good confidence stays `0` and does
       not raise.
-- [ ] Test: the new config key loads, and an unknown key still raises
+- [x] Test: the new config key loads, and an unknown key still raises
       `ConfigError`.
-- [ ] `ruff` and `mypy` clean.
+- [x] `ruff` and `mypy` clean.
 
 **Out of scope:** real vision confidence values; the `docs/PERCEPTION.md`
 channel rows (T-FIX-23); the `GameState` schema.
