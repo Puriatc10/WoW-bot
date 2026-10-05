@@ -295,7 +295,7 @@ def test_build_soak_summary_validation_and_calculations() -> None:
     assert summ.rss_end_bytes == 10_000_000
     assert summ.rss_peak_bytes == 10_000_000
     assert summ.position_delta_total == pytest.approx(1.0 + 3.0 + 4.0)
-    assert summ.inventory_delta_total == 3  # 3 - 0
+    assert summ.inventory_delta_total == 5  # 0 + 2 + 3 (incremental sum rule)
     assert summ.successful_actions_total == 6
     assert summ.reflex_ticks_total == 30
     assert summ.reflex_tick_rate_hz == pytest.approx(30 / 20.0)

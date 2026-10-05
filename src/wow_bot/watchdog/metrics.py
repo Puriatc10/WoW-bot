@@ -54,6 +54,10 @@ class MetricsConfig:
             )
 
 
+class ContractMismatchError(ValueError):
+    """Raised when cumulative and incremental telemetry contracts are mixed without an explicit adapter."""
+
+
 @dataclass(frozen=True)
 class ProgressSample:
     """A single progress measurement sample.
@@ -65,6 +69,8 @@ class ProgressSample:
       * level_or_xp >= 0.0.
       * successful_actions_total >= 0.
       * reflex_ticks_total >= 0.
+      * position_delta (if provided) is finite float >= 0.0.
+      * inventory_delta (if provided) is integer >= 0.
     """
 
     ts: float
@@ -73,6 +79,8 @@ class ProgressSample:
     level_or_xp: float
     successful_actions_total: int
     reflex_ticks_total: int
+    position_delta: float | None = None
+    inventory_delta: int | None = None
 
     def __post_init__(self) -> None:
         if not math.isfinite(self.ts) or self.ts < 0.0:
@@ -114,6 +122,90 @@ class ProgressSample:
             raise ValueError(
                 f"reflex_ticks_total must be an integer >= 0, got {self.reflex_ticks_total}"
             )
+        if self.position_delta is not None and (
+            isinstance(self.position_delta, bool)
+            or not isinstance(self.position_delta, (int, float))
+            or not math.isfinite(self.position_delta)
+            or float(self.position_delta) < 0.0
+        ):
+            raise ValueError(
+                f"position_delta must be a finite float >= 0.0, got {self.position_delta!r}"
+            )
+        if self.inventory_delta is not None and (
+            isinstance(self.inventory_delta, bool)
+            or not isinstance(self.inventory_delta, int)
+            or self.inventory_delta < 0
+        ):
+            raise ValueError(
+                f"inventory_delta must be an integer >= 0, got {self.inventory_delta!r}"
+            )
+
+
+class ProgressDeltaAdapter:
+    """Adapts a cumulative/absolute ProgressSample stream into incremental deltas.
+
+    Maintains internal history to compute:
+      - position_delta: Euclidean distance between consecutive (x, y) coordinates.
+      - inventory_delta: Positive delta in inventory_count (clamped to >= 0).
+
+    On the initial sample, position_delta is 0.0 and inventory_delta is 0.
+    """
+
+    def __init__(self) -> None:
+        self._prev_position: tuple[float, float] | None = None
+        self._prev_inventory: int | None = None
+
+    def adapt(self, sample: ProgressSample) -> ProgressSample:
+        """Return a ProgressSample with populated position_delta and inventory_delta."""
+        if not isinstance(sample, ProgressSample):
+            raise TypeError(f"Expected ProgressSample, got {type(sample).__name__}")
+
+        if self._prev_position is None:
+            pos_delta = 0.0
+        else:
+            dx = sample.position[0] - self._prev_position[0]
+            dy = sample.position[1] - self._prev_position[1]
+            pos_delta = math.hypot(dx, dy)
+
+        if self._prev_inventory is None:
+            inv_delta = 0
+        else:
+            inv_delta = max(0, sample.inventory_count - self._prev_inventory)
+
+        self._prev_position = sample.position
+        self._prev_inventory = sample.inventory_count
+
+        return ProgressSample(
+            ts=sample.ts,
+            position=sample.position,
+            inventory_count=sample.inventory_count,
+            level_or_xp=sample.level_or_xp,
+            successful_actions_total=sample.successful_actions_total,
+            reflex_ticks_total=sample.reflex_ticks_total,
+            position_delta=pos_delta,
+            inventory_delta=inv_delta,
+        )
+
+    def reset(self) -> None:
+        """Reset internal history state."""
+        self._prev_position = None
+        self._prev_inventory = None
+
+
+def extract_incremental_deltas(sample: ProgressSample) -> tuple[float, int]:
+    """Extract (position_delta, inventory_delta) from a ProgressSample.
+
+    Raises:
+        ContractMismatchError: If sample carries absolute metrics without explicit deltas,
+            preventing silent disagreement between cumulative producers and incremental consumers.
+    """
+    if sample.position_delta is None or sample.inventory_delta is None:
+        raise ContractMismatchError(
+            f"ProgressSample at ts={sample.ts} carries absolute metrics (position={sample.position}, "
+            f"inventory_count={sample.inventory_count}) without explicit deltas. "
+            "Use ProgressDeltaAdapter to bridge a cumulative producer to an incremental consumer."
+        )
+    return (float(sample.position_delta), int(sample.inventory_delta))
 
 
 @dataclass(frozen=True)

@@ -517,7 +517,7 @@ def build_soak_summary(
     log_growth_suspect = log_slope > config.log_growth_threshold_bytes_per_hour
 
     position_delta_total = float(sum(s.position_delta for s in samples))
-    inventory_delta_total = int(last.inventory_delta - first.inventory_delta)
+    inventory_delta_total = int(sum(s.inventory_delta for s in samples))
     successful_actions_total = int(last.successful_actions_total - first.successful_actions_total)
     reflex_ticks_total = int(last.reflex_ticks_total - first.reflex_ticks_total)
 

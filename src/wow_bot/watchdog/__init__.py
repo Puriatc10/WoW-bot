@@ -10,11 +10,14 @@ from wow_bot.watchdog.health import (
     MetricThresholds,
 )
 from wow_bot.watchdog.metrics import (
+    ContractMismatchError,
     MetricsConfig,
     MetricsError,
+    ProgressDeltaAdapter,
     ProgressSample,
     ProgressSnapshot,
     ProgressTracker,
+    extract_incremental_deltas,
 )
 from wow_bot.watchdog.shutdown import (
     ALREADY_EXITED_CODE,
@@ -76,6 +79,7 @@ __all__ = [
     "STARTUP_GRACE_SECONDS",
     "WATCHDOG_POLL_INTERVAL_SECONDS",
     "Clock",
+    "ContractMismatchError",
     "DeathEventMessage",
     "DummyResourceProbe",
     "GracefulShutdown",
@@ -93,6 +97,7 @@ __all__ = [
     "MultiprocessingProcessControl",
     "NullClock",
     "ProcessControl",
+    "ProgressDeltaAdapter",
     "ProgressSample",
     "ProgressSnapshot",
     "ProgressTracker",
@@ -109,5 +114,6 @@ __all__ = [
     "WatchdogMonitor",
     "WatchdogProcess",
     "WatchdogProtocolError",
+    "extract_incremental_deltas",
     "watchdog_process_main",
 ]

@@ -345,6 +345,26 @@ or adding any OS input outside `actuation/drivers/`.
 After T-FIX-08 merges, this exception is closed. Any future edit to a module that
 STRATEGY A treats as FROZEN requires its own explicit exception recorded in this file.
 
+### 5.13 Bounded exception: T-FIX-11 ProgressSample contract alignment
+
+The task T-FIX-11 authorizes a single, bounded exception to STRATEGY A.
+Its sole purpose is to align the ProgressSample contract between watchdog metrics
+and soak reporting: adding optional incremental delta fields (`position_delta`,
+`inventory_delta`) and `ProgressDeltaAdapter` to `src/wow_bot/watchdog/metrics.py`,
+raising `ContractMismatchError` on mismatched consumption, aligning the summary
+aggregation rule in `src/wow_bot/analysis/lab_soak_v2.py` so that both position and
+inventory deltas sum incremental deltas, and updating `scripts/lab/full_soak.py`.
+This is the only file scope of this exception in frozen pre-lab modules:
+`src/wow_bot/watchdog/metrics.py`, `src/wow_bot/watchdog/__init__.py`,
+and `src/wow_bot/analysis/lab_soak_v2.py`.
+
+It does NOT authorize changing any existing required field, changing the
+GameState schema, modifying `SafetyLayer`, `Session`, or `Config`, or changing
+any Phase 12 artifact.
+
+After T-FIX-11 merges, this exception is closed. Any future edit to a module that
+STRATEGY A treats as FROZEN requires its own explicit exception recorded in this file.
+
 
 ### 5.2 Source of Tasks
 

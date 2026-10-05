@@ -45,7 +45,7 @@ from wow_bot.lab.runner_v2 import (
     run_lab_loop_async,
 )
 from wow_bot.session import Session, SessionInfo, _make_config_snapshot, _utc_now_iso
-from wow_bot.watchdog.metrics import ProgressSample
+from wow_bot.watchdog.metrics import ProgressDeltaAdapter, ProgressSample
 
 
 def make_soak_sleep(
@@ -190,6 +190,8 @@ async def run_soak_async(
     samples: list[SoakSample] = []
     stop_event = asyncio.Event()
 
+    progress_adapter = ProgressDeltaAdapter() if progress_source is not None else None
+
     def sample_builder(ts: float, snap: ResourceSnapshot) -> SoakSample:
         pos_delta = 0.0
         inv_delta = 0
@@ -197,8 +199,17 @@ async def run_soak_async(
         refl_ticks = 0
         if progress_source is not None:
             prog = progress_source()
-            pos_delta = float(getattr(prog, "position_delta", 0.0))
-            inv_delta = int(getattr(prog, "inventory_delta", 0))
+            if getattr(prog, "position_delta", None) is not None and getattr(prog, "inventory_delta", None) is not None:
+                pos_delta = float(prog.position_delta)
+                inv_delta = int(prog.inventory_delta)
+            elif progress_adapter is not None:
+                if isinstance(prog, ProgressSample):
+                    adapted = progress_adapter.adapt(prog)
+                    pos_delta = adapted.position_delta if adapted.position_delta is not None else 0.0
+                    inv_delta = adapted.inventory_delta if adapted.inventory_delta is not None else 0
+                else:
+                    pos_delta = float(getattr(prog, "position_delta", 0.0))
+                    inv_delta = int(getattr(prog, "inventory_delta", 0))
             succ_actions = int(getattr(prog, "successful_actions_total", 0))
             refl_ticks = int(getattr(prog, "reflex_ticks_total", 0))
 
@@ -464,6 +475,16 @@ def main(argv: list[str] | None = None) -> int:
     def meta_state_source() -> _SyntheticMetaState:
         return meta_inst
 
+    def progress_source() -> ProgressSample:
+        return ProgressSample(
+            ts=time.monotonic(),
+            position=(state_inst.player_x, state_inst.player_y),
+            inventory_count=state_inst.inventory_count,
+            level_or_xp=state_inst.level_or_xp,
+            successful_actions_total=0,
+            reflex_ticks_total=0,
+        )
+
     try:
         result, report = asyncio.run(
             run_soak_async(
@@ -482,6 +503,7 @@ def main(argv: list[str] | None = None) -> int:
                 game_state_source=game_state_source,
                 meta_state_source=meta_state_source,
                 llm_client=_FakeLlmClient(),
+                progress_source=progress_source,
             )
         )
     except ConfigError as exc:

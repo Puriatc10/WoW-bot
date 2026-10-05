@@ -119,7 +119,7 @@ Tier names are unchanged from the original revision of this document.
 | 2 | T-FIX-08 | Gameplay primitives (cast/loot/vendor/jump) | DONE |
 | 3 — Scientific Model | T-FIX-09 | Oscillator→drives coupling investigation | DONE |
 | 3 | T-FIX-10 | Spectral acceptance resolution | DONE |
-| 4 — Telemetry & Observability (صداقت داده) | T-FIX-11 | ProgressSample contract alignment | PENDING |
+| 4 — Telemetry & Observability (صداقت داده) | T-FIX-11 | ProgressSample contract alignment | DONE |
 | 4 | T-FIX-12 | Reflex tick truth | PENDING |
 | 4 | T-FIX-13 | Health counter truth | PENDING |
 | 4 | T-FIX-14 | Cross-platform resource metric semantics | PENDING |
@@ -941,7 +941,7 @@ or dynamics.
 
 ## T-FIX-11 — ProgressSample contract alignment
 
-**Status:** PENDING
+**Status:** DONE
 **Depends on:** none
 **Evidence:** the progress callback is annotated `ProgressSample`, which
 carries `position` and `inventory_count`, but the consumer reads
@@ -974,13 +974,13 @@ incremental contract is ambiguous.
   explicit.
 
 **Acceptance:**
-- [ ] Test: the sampler reads real values from a producer that supplies
+- [x] Test: the sampler reads real values from a producer that supplies
       them (no silent zero).
-- [ ] Test: a cumulative producer and an incremental consumer cannot
+- [x] Test: a cumulative producer and an incremental consumer cannot
       silently disagree — the mismatch is either impossible by type or
       raises.
-- [ ] Test: summary position and inventory deltas use the same rule.
-- [ ] `ruff` and `mypy` clean.
+- [x] Test: summary position and inventory deltas use the same rule.
+- [x] `ruff` and `mypy` clean.
 
 **Out of scope:** health counter truth (T-FIX-13); reflex tick truth
 (T-FIX-12); aggregate/reporting semantics (T-FIX-18/19).
