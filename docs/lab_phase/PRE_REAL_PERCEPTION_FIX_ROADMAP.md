@@ -1067,7 +1067,7 @@ analysis.
 
 ## T-FIX-14 — Cross-platform resource metric semantics
 
-**Status:** PENDING
+**Status:** DONE
 **Depends on:** none
 **Evidence:** the POSIX sampler reports `ru_maxrss` (peak resident usage)
 while the Windows sampler reports `WorkingSetSize` (current working set) —
@@ -1097,11 +1097,11 @@ while `events.jsonl` actually grows.
 - POSIX-only skips on Windows remain skips, not failures.
 
 **Acceptance:**
-- [ ] Test: a peak-vs-current mismatch is either corrected or explicitly
+- [x] Test: a peak-vs-current mismatch is either corrected or explicitly
       typed/labelled with a test asserting the label.
-- [ ] Test: the log-size sample is non-zero once the logger writes.
-- [ ] Test: the metric definition is asserted against the documentation.
-- [ ] The frozen `runs/lab/aggregate-1h/aggregate_v1.json` still parses
+- [x] Test: the log-size sample is non-zero once the logger writes.
+- [x] Test: the metric definition is asserted against the documentation.
+- [x] The frozen `runs/lab/aggregate-1h/aggregate_v1.json` still parses
       unchanged.
 
 **Out of scope:** opt-in real CPU telemetry; regenerating any Phase 12

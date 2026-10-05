@@ -37,16 +37,37 @@ class PROCESS_MEMORY_COUNTERS(ctypes.Structure):
 
 
 class WindowsResourceSampler:
-    """ResourceSampler implementation capturing current process RSS, CPU, and log size on Windows."""
+    """ResourceSampler implementation capturing process RSS, CPU, and log size on Windows.
 
+    Memory Metric Semantics:
+      - 'peak' (default): Samples PeakWorkingSetSize (bytes), genuinely equivalent
+        to POSIX ru_maxrss (peak resident set size / high-water mark).
+        metric_label = 'peak_rss'.
+      - 'current': Samples WorkingSetSize (bytes), representing instantaneous physical memory
+        currently allocated to the process.
+        metric_label = 'current_working_set'.
+    """
+
+    metric_label: str
+    metric_mode: str
     _get_current_process: ctypes._NamedFuncPointer
     _get_process_times: ctypes._NamedFuncPointer
     _get_process_memory_info: ctypes._NamedFuncPointer
 
-    def __init__(self, *, log_path: Path | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        log_path: Path | None = None,
+        metric_mode: str = "peak",
+    ) -> None:
         if sys.platform != "win32" or not hasattr(ctypes, "WinDLL"):
             raise RuntimeError("WindowsResourceSampler is only available on Windows")
 
+        if metric_mode not in ("peak", "current"):
+            raise ValueError(f"Invalid metric_mode '{metric_mode}', must be 'peak' or 'current'")
+
+        self.metric_mode = metric_mode
+        self.metric_label = "peak_rss" if metric_mode == "peak" else "current_working_set"
         self._log_path: Path | None = log_path
         self._prev_cpu_time_s: float | None = None
         self._prev_wall_time_s: float | None = None
@@ -109,7 +130,10 @@ class WindowsResourceSampler:
         if not self._get_process_memory_info(h_process, ctypes.byref(pmc), pmc.cb):
             raise RuntimeError("GetProcessMemoryInfo failed during sample")
 
-        rss_bytes = int(pmc.WorkingSetSize)
+        if self.metric_mode == "peak":
+            rss_bytes = int(pmc.PeakWorkingSetSize)
+        else:
+            rss_bytes = int(pmc.WorkingSetSize)
 
         creation = FILETIME()
         exit_time = FILETIME()
@@ -154,6 +178,7 @@ class WindowsResourceSampler:
             cpu_percent=cpu_percent,
             rss_bytes=rss_bytes,
             log_size_bytes=log_size_bytes,
+            metric_label=self.metric_label,
         )
 
 

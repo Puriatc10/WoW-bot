@@ -404,6 +404,28 @@ or Config, or changing any Phase 12 artifact.
 After T-FIX-13 merges, this exception is closed. Any future edit to a module that
 STRATEGY A treats as FROZEN requires its own explicit exception recorded in this file.
 
+### 5.16 Bounded exception: T-FIX-14 Cross-platform resource metric semantics
+
+The task T-FIX-14 authorizes a single, bounded exception to STRATEGY A.
+Its sole purpose is to resolve cross-platform resource metric semantics in
+`src/wow_bot/analysis/lab_soak_v2.py`, `src/wow_bot/analysis/windows_sampler.py`,
+and `scripts/lab/full_soak.py`: harmonizing peak vs current RSS metrics
+(reporting peak resident set size via `PeakWorkingSetSize` on Windows matching
+POSIX `ru_maxrss`), labelling metric semantics on `ResourceSnapshot` and samplers,
+installing the file logger in `scripts/lab/full_soak.py` before sampling log size,
+and documenting the metric definition in `docs/RESOURCE_METRICS.md`.
+This is the only file scope of this exception in frozen pre-lab modules:
+`src/wow_bot/analysis/lab_soak_v2.py`, `src/wow_bot/analysis/windows_sampler.py`,
+and `scripts/lab/full_soak.py`.
+
+It does NOT authorize opt-in real CPU telemetry, regenerating or modifying any
+Phase 12 artifact (such as `runs/lab/aggregate-1h/aggregate_v1.json` or
+`runs/lab/soak-1h/soak_report.json`), changing the aggregate contract, or
+modifying the `GameState` schema, `SafetyLayer`, `Session`, or `Config`.
+
+After T-FIX-14 merges, this exception is closed. Any future edit to a module that
+STRATEGY A treats as FROZEN requires its own explicit exception recorded in this file.
+
 
 
 ### 5.2 Source of Tasks

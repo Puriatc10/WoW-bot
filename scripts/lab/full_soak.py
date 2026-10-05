@@ -11,6 +11,7 @@ import argparse
 import asyncio
 import dataclasses
 import json
+import logging
 import os
 import sys
 import time
@@ -44,6 +45,7 @@ from wow_bot.lab.runner_v2 import (
     build_lab_runtime_async,
     run_lab_loop_async,
 )
+from wow_bot.logging_setup import setup_logging
 from wow_bot.session import Session, SessionInfo, _make_config_snapshot, _utc_now_iso
 from wow_bot.watchdog.metrics import ProgressDeltaAdapter, ProgressSample
 
@@ -161,6 +163,7 @@ async def run_soak_async(
     meta_state_source: Callable[[], object],
     llm_client: object,
     progress_source: Callable[[], ProgressSample] | None = None,
+    install_file_logger: bool = True,
 ) -> tuple[LabRunResult, SoakReport]:
     """Asynchronously execute a MOCK mode soak run for duration_s and produce SoakReport."""
     if (
@@ -269,6 +272,11 @@ async def run_soak_async(
     session = Session(info)
     runtime = None
 
+    if install_file_logger:
+        setup_logging(session, config.log_level)
+        soak_logger = logging.getLogger("wow_bot.soak")
+        soak_logger.info("Soak harness initialized", extra={"payload": {"session_id": session_id}})
+
     try:
         # Override lab_mode to True on config so build_lab_runtime_async constructs runtime
         lab_config = dataclasses.replace(config, lab_mode=True)
@@ -332,6 +340,13 @@ async def run_soak_async(
         raise
     finally:
         session.close("soak_complete")
+        if install_file_logger:
+            root = logging.getLogger()
+            for h in list(root.handlers):
+                if isinstance(h, logging.FileHandler):
+                    h.flush()
+                    root.removeHandler(h)
+                    h.close()
         if runtime is not None and hasattr(runtime.world, "close"):
             await runtime.world.close()
 
@@ -477,7 +492,7 @@ def main(argv: list[str] | None = None) -> int:
 
     def progress_source() -> ProgressSample:
         return ProgressSample(
-            ts=time.monotonic(),
+            ts=float(state_inst.player_x),
             position=(state_inst.player_x, state_inst.player_y),
             inventory_count=state_inst.inventory_count,
             level_or_xp=state_inst.level_or_xp,

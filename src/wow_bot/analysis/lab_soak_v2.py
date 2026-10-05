@@ -49,12 +49,23 @@ class LabSoakError(Exception):
 
 @dataclass(frozen=True)
 class ResourceSnapshot:
-    """Immutable operational snapshot captured at a given monotonic timestamp."""
+    """Immutable operational snapshot captured at a given monotonic timestamp.
+
+    Attributes:
+        ts: Monotonic timestamp in seconds (finite float >= 0.0).
+        cpu_percent: Process CPU utilization percentage (finite float >= 0.0).
+        rss_bytes: Resident memory usage in bytes (int >= 0). Across supported platforms,
+            this represents peak resident memory (Peak RSS / Peak Working Set) by default.
+        log_size_bytes: Size of the monitored log file in bytes (int >= 0).
+        metric_label: Semantic label describing the resident memory metric ('peak_rss' or
+            'current_working_set'). Defaults to 'peak_rss'.
+    """
 
     ts: float
     cpu_percent: float
     rss_bytes: int
     log_size_bytes: int
+    metric_label: str = "peak_rss"
 
     def __post_init__(self) -> None:
         if isinstance(self.ts, bool) or not isinstance(self.ts, (int, float)) or not math.isfinite(self.ts) or self.ts < 0.0:
@@ -74,6 +85,9 @@ class ResourceSnapshot:
         if isinstance(self.log_size_bytes, bool) or not isinstance(self.log_size_bytes, int) or self.log_size_bytes < 0:
             raise ValueError(f"log_size_bytes must be an int >= 0, got {self.log_size_bytes!r}")
 
+        if not isinstance(self.metric_label, str) or not self.metric_label:
+            raise ValueError(f"metric_label must be a non-empty string, got {self.metric_label!r}")
+
 
 class ResourceSampler(Protocol):
     """Protocol abstraction for sampling operational resource usage."""
@@ -83,7 +97,18 @@ class ResourceSampler(Protocol):
 
 
 class ProcessResourceSampler:
-    """ResourceSampler implementation capturing current process RSS, CPU, and log size on Linux/macOS."""
+    """ResourceSampler implementation capturing peak process RSS (ru_maxrss), CPU, and log size on Linux/macOS.
+
+    Memory Metric Semantics:
+      - Linux: ru_maxrss * 1024 (bytes). Peak resident set size.
+      - macOS (Darwin): ru_maxrss (bytes). Peak resident set size.
+      - Metric label: 'peak_rss'.
+      - The reported metric is a monotonically non-decreasing high-water mark.
+        Calculated slope measures the rate of peak expansion (ratchet), not fluctuating instantaneous working set.
+    """
+
+    metric_label: str = "peak_rss"
+    metric_mode: str = "peak"
 
     def __init__(self, *, log_path: Path | None = None) -> None:
         if resource_module is None:
@@ -127,25 +152,44 @@ class ProcessResourceSampler:
             cpu_percent=cpu_percent,
             rss_bytes=rss_bytes,
             log_size_bytes=log_size_bytes,
+            metric_label=self.metric_label,
         )
 
 
 def make_default_resource_sampler(
     *,
     log_path: Path | None = None,
+    metric_mode: str = "peak",
 ) -> ResourceSampler:
     """Construct platform-appropriate default resource sampler.
 
-    Returns ProcessResourceSampler on Linux/macOS and WindowsResourceSampler on Windows.
-    Raises LabSoakError on unsupported platforms.
+    Args:
+        log_path: Optional path to log file whose size will be monitored.
+        metric_mode: Memory sampling mode: 'peak' (default, genuine cross-platform
+            peak resident memory) or 'current' (Windows only, instantaneous working set).
+
+    Returns:
+        ProcessResourceSampler on Linux/macOS and WindowsResourceSampler on Windows.
+
+    Raises:
+        ValueError: If metric_mode is invalid or unsupported on the platform.
+        LabSoakError: On unsupported platforms.
     """
+    if metric_mode not in ("peak", "current"):
+        raise ValueError(f"Invalid metric_mode '{metric_mode}', must be 'peak' or 'current'")
+
     if sys.platform.startswith("linux") or sys.platform == "darwin":
+        if metric_mode != "peak":
+            raise ValueError(
+                f"POSIX ProcessResourceSampler only supports metric_mode='peak' via getrusage; "
+                f"got metric_mode={metric_mode!r}"
+            )
         return ProcessResourceSampler(log_path=log_path)
 
     if sys.platform == "win32":
         from wow_bot.analysis.windows_sampler import WindowsResourceSampler
 
-        return WindowsResourceSampler(log_path=log_path)
+        return WindowsResourceSampler(log_path=log_path, metric_mode=metric_mode)
 
     raise LabSoakError(f"Unsupported platform for default resource sampler: {sys.platform!r}")
 
@@ -275,7 +319,15 @@ class SoakSample:
 
 @dataclass(frozen=True)
 class SoakSummary:
-    """Aggregate summary statistics over a sequence of soak samples."""
+    """Aggregate summary statistics over a sequence of soak samples.
+
+    Note on Memory Metrics:
+      rss_start_bytes, rss_end_bytes, rss_peak_bytes, and rss_slope_bytes_per_hour
+      track peak resident memory (Peak RSS / Peak Working Set) across platforms by default.
+      Because peak RSS is a monotonically non-decreasing high-water mark over process lifetime,
+      rss_slope_bytes_per_hour measures the rate of high-water mark growth (ratchet),
+      rather than fluctuating instantaneous working set.
+    """
 
     sample_count: int
     duration_s: float
