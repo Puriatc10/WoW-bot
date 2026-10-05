@@ -58,6 +58,7 @@ from wow_bot.farm.vendor import (
     VendorStatus,
     resolve_vendor_node,
 )
+from wow_bot.mode import enter_mode
 from wow_bot.nav.graph import GraphConfig, NavGraph, build_graph
 from wow_bot.nav.navigator import NavConfig, Navigator, NavStatus, SimpleReplanner
 from wow_bot.nav.telemetry import RealCpuSource, TelemetryCollector, TelemetryConfig
@@ -225,6 +226,9 @@ class LabRuntime:
 
     async def close(self) -> None:
         """Close and reap all managed runtime resources."""
+        with contextlib.suppress(Exception):
+            self.driver.release_all()
+        self.safety.disarm()
         if self.perception_port is not None:
             self.perception_port.stop_pump()
         if self.reflex_loop is not None and self.reflex_loop.is_running():
@@ -567,8 +571,13 @@ async def build_lab_runtime_async(
     llm_client: object | None = None,
 ) -> LabRuntime:
     """Asynchronously construct and wire all LAB mode runtime infrastructure components."""
-    if not getattr(config, "lab_mode", False):
+    mode_ctx = enter_mode(config, session)  # type: ignore[arg-type]
+    if mode_ctx.mode != "LAB":
         raise LabRunnerError("config.lab_mode must be True for LAB execution mode")
+
+    safety = mode_ctx.safety
+    for addr in getattr(config, "server_allowlist", ()):
+        safety.check_allowlist(addr)
 
     rcfg = runner_config if runner_config is not None else LabRunnerConfig()
     clk = clock if clock is not None else time.monotonic
@@ -608,20 +617,22 @@ async def build_lab_runtime_async(
             session=session,
         )
     except (LoaderError, Exception) as exc:
+        safety.disarm()
         raise LabRunnerError(f"Failed to load World Model: {exc}") from exc
 
     try:
         graph = await build_graph(world, config=GraphConfig())
     except Exception as exc:
+        safety.disarm()
         raise LabRunnerError(f"Failed to build NavGraph: {exc}") from exc
 
-    safety = SafetyLayer(config=config, session=session)  # type: ignore[arg-type]
     if sleep is not None:
         slp = sleep
     else:
         slp = _CancellableSleep(safety=safety, base_sleep=time.sleep)
 
     driver = make_driver(driver_name, lab_mode=True)
+    safety.register_kill_switch(driver.release_all)
     backend = focus_backend if focus_backend is not None else NullFocusBackend()
     focus = FocusManager(window_title, backend=backend)  # type: ignore[arg-type]
     mapper = ActionMapper(driver, delay=RealDelay())
@@ -640,6 +651,7 @@ async def build_lab_runtime_async(
         session=session,
         rng=random.Random(rng_seed),
     )
+    safety.register_kill_switch(lambda: actuator.abort("safety_kill_switch"))
 
     def pos_source() -> tuple[float, float]:
         return _extract_position(state_source())
@@ -1129,7 +1141,19 @@ async def run_lab_loop_async(
 
     try:
         while True:
+            if runtime.safety.is_aborted():
+                reason = runtime.safety.abort_reason() or "safety_aborted"
+                return _finish_run(
+                    LabRunStatus.RUNTIME_ERROR,
+                    cycles_completed,
+                    failures,
+                    start_time,
+                    runtime,
+                    reason=f"safety_aborted:{reason}",
+                )
+
             if runtime.watchdog is not None and runtime.watchdog.shutdown_event.is_set():
+                runtime.safety.abort(ShutdownReason.HEALTH_CRITICAL.value)
                 report = runtime.shutdown.run(ShutdownReason.HEALTH_CRITICAL)
                 return _finish_run(
                     LabRunStatus.HEALTH_CRITICAL,
@@ -1162,6 +1186,7 @@ async def run_lab_loop_async(
                 )
 
             if consecutive_failures >= max_fails:
+                runtime.safety.abort("max_consecutive_failures_reached")
                 return _finish_run(
                     LabRunStatus.MAX_FAILURES_REACHED,
                     cycles_completed,
@@ -1185,6 +1210,7 @@ async def run_lab_loop_async(
                     reason="cancelled",
                 )
             except Exception as exc:  # noqa: BLE001
+                runtime.safety.abort(f"critical_failure:{type(exc).__name__}:{exc}")
                 return _finish_run(
                     LabRunStatus.RUNTIME_ERROR,
                     cycles_completed,
@@ -1214,6 +1240,7 @@ async def run_lab_loop_async(
                     reason="cancelled",
                 )
             except Exception as exc:  # noqa: BLE001
+                runtime.safety.abort(f"critical_failure:{type(exc).__name__}:{exc}")
                 return _finish_run(
                     LabRunStatus.RUNTIME_ERROR,
                     cycles_completed,
@@ -1254,6 +1281,7 @@ async def run_lab_loop_async(
             runtime.health.observe(snapshot, now=runtime.clock())
 
             if runtime.health.current_state == HealthState.CRITICAL:
+                runtime.safety.abort(ShutdownReason.HEALTH_CRITICAL.value)
                 report = runtime.shutdown.run(ShutdownReason.HEALTH_CRITICAL)
                 return _finish_run(
                     LabRunStatus.HEALTH_CRITICAL,
@@ -1273,6 +1301,7 @@ async def run_lab_loop_async(
             )
             loop_res = runtime.loops.observe(observation)
             if loop_res is not None and loop_res.detected:
+                runtime.safety.abort(ShutdownReason.LOOP_DETECTED.value)
                 report = runtime.shutdown.run(ShutdownReason.LOOP_DETECTED)
                 return _finish_run(
                     LabRunStatus.LOOP_DETECTED,
@@ -1288,7 +1317,28 @@ async def run_lab_loop_async(
                 runtime.sleep(REFLEX_INTERVAL_S)
 
             await asyncio.sleep(0)
+    except asyncio.CancelledError:
+        return _finish_run(
+            LabRunStatus.STOP_EVENT_SET,
+            cycles_completed,
+            failures,
+            start_time,
+            runtime,
+            reason="cancelled",
+        )
+    except Exception as exc:  # noqa: BLE001
+        runtime.safety.abort(f"critical_failure:{type(exc).__name__}:{exc}")
+        return _finish_run(
+            LabRunStatus.RUNTIME_ERROR,
+            cycles_completed,
+            failures,
+            start_time,
+            runtime,
+            reason=f"{type(exc).__name__}:{exc}",
+        )
     finally:
+        with contextlib.suppress(Exception):
+            runtime.driver.release_all()
         if managed_port and runtime.perception_port is not None:
             runtime.perception_port.stop_pump()
         if (

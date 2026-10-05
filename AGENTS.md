@@ -300,6 +300,28 @@ After T-FIX-06 merges, this exception is closed. Any future edit to a
 module that STRATEGY A treats as FROZEN requires its own explicit
 exception recorded in this file.
 
+### 5.11 Bounded exception: T-FIX-07 Safety lifecycle wiring
+
+The task T-FIX-07 authorizes a single, bounded exception to STRATEGY A.
+Its sole purpose is to wire the mandatory safety lifecycle calls from
+AGENTS.md §4.4 into `src/wow_bot/lab/runner_v2.py` and `src/wow_bot/actuation/driver.py`:
+invoking `enter_mode` from `mode.py` at lab runtime startup (enforcing network
+isolation sentinel check, allowlist check, dry_run=False for LAB_MODE, and
+arming `SafetyLayer` before actuator creation), registering kill switch callbacks
+on `SafetyLayer`, ensuring unconditional driver input release on every loop exit path
+(success, stop, cancel, and exception), triggering `safety.abort` on critical failures,
+and restricting live OS input driver backends to `lab_mode=True` in `make_driver`.
+This is the only file scope of this exception in frozen pre-lab modules:
+`src/wow_bot/lab/runner_v2.py` and `src/wow_bot/actuation/driver.py`.
+
+It does NOT authorize changing `SafetyLayer` semantics, modifying `Session` or
+`Config`, modifying the `GameState` schema, changing consumer Protocols, or
+changing any Phase 12 artifact.
+
+After T-FIX-07 merges, this exception is closed. Any future edit to a
+module that STRATEGY A treats as FROZEN requires its own explicit
+exception recorded in this file.
+
 ### 5.2 Source of Tasks
 
 Tasks are defined exclusively in `LAB_PHASE_ROADMAP.md`. Do not invent

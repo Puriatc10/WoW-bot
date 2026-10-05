@@ -335,7 +335,7 @@ async def test_runner_cycle_advances_fsm_and_emits_intent(tmp_path: Path) -> Non
         isolation_sentinel="127.0.0.1:9999",
         kill_switch_key="F12",
         session_root=sess_root,
-        dry_run=True,
+        dry_run=False,
         max_session_seconds=3600,
         log_level="INFO",
     )

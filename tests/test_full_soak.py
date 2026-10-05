@@ -146,7 +146,7 @@ def test_files(tmp_path: Path) -> tuple[Path, Path, Path, Path]:
         'isolation_sentinel = "127.0.0.1:9999"\n'
         'kill_switch_key = "F12"\n'
         f'session_root = "{tmp_path.as_posix()}"\n'
-        'dry_run = true\n'
+        'dry_run = false\n'
         'max_session_seconds = 3600\n'
         'log_level = "INFO"\n',
         encoding="utf-8",

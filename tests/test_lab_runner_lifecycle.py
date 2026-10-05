@@ -114,7 +114,7 @@ def mock_config(tmp_path: Path) -> Config:
         isolation_sentinel="127.0.0.1:9999",
         kill_switch_key="F12",
         session_root=sess_root,
-        dry_run=True,
+        dry_run=False,
         max_session_seconds=3600,
         log_level="INFO",
     )
@@ -272,7 +272,7 @@ def test_stop_issued_during_blocked_sleep_returns_bounded_time(tmp_path: Path) -
         isolation_sentinel="127.0.0.1:9999",
         kill_switch_key="F12",
         session_root=tmp_path / "runs",
-        dry_run=True,
+        dry_run=False,
         max_session_seconds=3600,
         log_level="INFO",
     )

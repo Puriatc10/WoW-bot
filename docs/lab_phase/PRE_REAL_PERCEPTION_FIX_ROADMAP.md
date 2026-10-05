@@ -114,8 +114,8 @@ Tier names are unchanged from the original revision of this document.
 | 1b | T-FIX-22 | perception_confidence plumbing and thresholding | DONE |
 | 1c — Perception → runtime bridge | T-FIX-20 | Async perception port and loop scheduling | DONE |
 | 2 — Execution Path (تیک → اکشن) | T-FIX-05 | FSM IDLE→SCANNING progression | DONE |
-| 2 | T-FIX-06 | Reflex/Watchdog lifecycle | PENDING |
-| 2 | T-FIX-07 | Safety lifecycle wiring | PENDING |
+| 2 | T-FIX-06 | Reflex/Watchdog lifecycle | DONE |
+| 2 | T-FIX-07 | Safety lifecycle wiring | DONE |
 | 2 | T-FIX-08 | Gameplay primitives (cast/loot/vendor/jump) | PENDING |
 | 3 — Scientific Model | T-FIX-09 | Oscillator→drives coupling investigation | PENDING |
 | 3 | T-FIX-10 | Spectral acceptance resolution | PENDING |
@@ -765,7 +765,7 @@ counter truth (T-FIX-13); reflex tick telemetry (T-FIX-12).
 
 ## T-FIX-07 — Safety lifecycle wiring
 
-**Status:** PENDING
+**Status:** DONE
 **Depends on:** T-FIX-06
 **Evidence:** the generic lab builder does not enforce `dry_run`, call
 `enter_mode`, check isolation, arm the `SafetyLayer`, or install a
@@ -794,13 +794,13 @@ independent dry-run gate (`:116`).
   duplicated.
 
 **Acceptance:**
-- [ ] Test: `LAB_MODE` startup fails when the isolation check fails, with
+- [x] Test: `LAB_MODE` startup fails when the isolation check fails, with
       no actuator constructed.
-- [ ] Test: all held keys/buttons are released on success, on stop, and on
+- [x] Test: all held keys/buttons are released on success, on stop, and on
       an injected exception.
-- [ ] Test: `dry_run=False` in `MOCK_MODE` raises.
-- [ ] Test: a critical failure invokes `safety.abort` with a reason.
-- [ ] Test: `SafetyLayer` is armed before the actuator exists (ordering
+- [x] Test: `dry_run=False` in `MOCK_MODE` raises.
+- [x] Test: a critical failure invokes `safety.abort` with a reason.
+- [x] Test: `SafetyLayer` is armed before the actuator exists (ordering
       asserted, not assumed).
 
 **Out of scope:** changing `SafetyLayer` semantics; real network probes;
@@ -2118,4 +2118,12 @@ fact been committed in `d81ce69`, and are now `DONE`.
   `target_is_lootable` on LootView; `inventory_count` on VendorView). Zero
   `xfail` markers remain; perception tests report 354 passed. `ruff` and
   `mypy src` clean.
+- **T-FIX-07** — DONE. Wired the mandatory safety lifecycle calls: `enter_mode`
+  invoked in lab runner startup (checking network isolation and allowlists, and
+  arming `SafetyLayer` before actuator construction); unconditional input
+  release (`runtime.driver.release_all()`) on all loop exit paths (success,
+  stop, cancel, runtime error); `safety.abort` called on critical failure
+  shutdown paths; `make_driver` enforces `lab_mode=True` for live OS input
+  drivers (`pynput`, `interception`). Added `tests/test_safety_lifecycle.py`
+  (8 tests verifying all acceptance criteria). `ruff` and `mypy` clean.
 

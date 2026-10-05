@@ -102,16 +102,25 @@ class InputDriver(Protocol):
 
 
 def make_driver(name: str, *, lab_mode: bool) -> InputDriver:
-    """Factory function to instantiate input drivers by name."""
+    """Factory function to instantiate input drivers by name.
+
+    Restricts live OS/hardware input drivers ('pynput', 'interception') to LAB_MODE
+    only (lab_mode=True) in compliance with AGENTS.md §3 and §7. In non-lab mode,
+    only the synthetic 'null' driver is permitted.
+    """
     if name == "null":
         from wow_bot.actuation.drivers.null import NullDriver
 
         return NullDriver()
     elif name == "pynput":
+        if not lab_mode:
+            raise DriverError("Driver 'pynput' requires lab_mode=True")
         from wow_bot.actuation.drivers.pynput_backend import PynputBackend
 
         return PynputBackend()
     elif name == "interception":
+        if not lab_mode:
+            raise DriverError("Driver 'interception' requires lab_mode=True")
         from wow_bot.actuation.drivers.interception_backend import InterceptionBackend
 
         return InterceptionBackend()

@@ -179,16 +179,13 @@ def test_make_driver_null() -> None:
     assert isinstance(driver, NullDriver)
 
 
-def test_make_driver_pynput_unavailable_lab_mode_false(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """make_driver("pynput", lab_mode=False) raises DriverError when pynput is unavailable."""
-    monkeypatch.setitem(sys.modules, "pynput", None)
-    monkeypatch.setitem(sys.modules, "pynput.keyboard", None)
-    monkeypatch.setitem(sys.modules, "pynput.mouse", None)
-
-    with pytest.raises(DriverError, match="pynput is required"):
+def test_make_driver_non_null_lab_mode_false_raises() -> None:
+    """make_driver("pynput", lab_mode=False) and "interception" raise DriverError because live drivers require lab_mode=True."""
+    with pytest.raises(DriverError, match="requires lab_mode=True"):
         make_driver("pynput", lab_mode=False)
+
+    with pytest.raises(DriverError, match="requires lab_mode=True"):
+        make_driver("interception", lab_mode=False)
 
 
 def test_make_driver_pynput_unavailable_lab_mode_true(

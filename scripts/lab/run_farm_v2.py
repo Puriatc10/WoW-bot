@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
 import sys
 from dataclasses import dataclass
@@ -140,7 +141,7 @@ def main(args: list[str] | None = None) -> int:
         isolation_sentinel="127.0.0.1:9999",
         kill_switch_key="F12",
         session_root=sess_root,
-        dry_run=(parsed.mode == "MOCK"),
+        dry_run=False,
         max_session_seconds=3600,
         log_level="INFO",
     )
@@ -202,6 +203,7 @@ def main(args: list[str] | None = None) -> int:
 
     result = run_lab_loop(runtime, max_cycles=parsed.max_cycles)
     print(json.dumps(result.to_json(), indent=2))
+    asyncio.run(runtime.close())
 
     if result.status in (LabRunStatus.COMPLETED, LabRunStatus.MAX_CYCLES_REACHED):
         return 0
