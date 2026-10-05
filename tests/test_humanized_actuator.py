@@ -59,6 +59,7 @@ class FakeWrappedActuator:
         intent: Intent,
         *,
         position: tuple[float, float],
+        heading: float | None = None,
     ) -> ActionResult:
         if self.should_raise is not None:
             raise self.should_raise
