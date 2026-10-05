@@ -73,10 +73,11 @@ class HumanizedActuator:
         intent: Intent,
         *,
         position: tuple[float, float],
+        heading: float | None = None,
     ) -> ActionResult:
         """Execute a single action intent with injected inter-action delays and micro-pauses."""
         if not self._config.enabled:
-            return self._wrapped.execute(intent, position=position)
+            return self._wrapped.execute(intent, position=position, heading=heading)
 
         interval_s = sample_interval(self._rng, self._config.interval_config)
         interval_s = max(interval_s, self._config.min_delay_s)
@@ -93,7 +94,7 @@ class HumanizedActuator:
                 "Cursor trajectory returned non-None value, but no consumer is wired up yet."
             )
 
-        result = self._wrapped.execute(intent, position=position)
+        result = self._wrapped.execute(intent, position=position, heading=heading)
 
         if self._config.log_to_session and self._session is not None:
             self._session.write_event({

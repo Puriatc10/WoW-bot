@@ -60,6 +60,7 @@ class CountingActionMapper:
         self.execute_count = 0
         self.last_intent: Intent | None = None
         self.last_position: tuple[float, float] | None = None
+        self.last_heading: float | None = None
         self.canned_result = canned_result or ActionResult(
             status=ActionStatus.SUCCESS,
             latency_ms=10.0,
@@ -67,10 +68,17 @@ class CountingActionMapper:
         )
         self.raise_exc: Exception | None = None
 
-    def execute(self, intent: Intent, *, position: tuple[float, float]) -> ActionResult:
+    def execute(
+        self,
+        intent: Intent,
+        *,
+        position: tuple[float, float],
+        heading: float | None = None,
+    ) -> ActionResult:
         self.execute_count += 1
         self.last_intent = intent
         self.last_position = position
+        self.last_heading = heading
         if self.raise_exc is not None:
             raise self.raise_exc
         return self.canned_result

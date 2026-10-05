@@ -7,6 +7,7 @@ input injection or physical keyboard/mouse control is performed.
 Public API:
     - :class:`ControllerCommand`
     - :class:`Controller`
+    - :class:`SimulationController`
     - :data:`SUPPORTED_MOUSE_BUTTONS`
 """
 
@@ -160,3 +161,44 @@ class Controller:
         )
         self._commands.append(cmd)
         log.info("stop_all dry_run=true")
+
+
+class SimulationController(Controller):
+    """Simulated dry-run controller for recording symbolic intents in MOCK_MODE.
+
+    Inherits Controller and provides symbolic intent execution and recording.
+    Real input execution (dry_run=False) remains strictly rejected.
+    """
+
+    def __init__(self, *, dry_run: bool = True) -> None:
+        super().__init__(dry_run=dry_run)
+        self._intents: list[Any] = []
+
+    def record_intent(self, intent: Any) -> None:
+        """Record a symbolic intent."""
+        self._intents.append(intent)
+        action_name = type(intent).__name__.lower()
+        params = dict(getattr(intent, "__dict__", {}))
+        self._commands.append(ControllerCommand(action=action_name, params=params))
+
+    def execute(
+        self,
+        intent: Any,
+        *,
+        position: tuple[float, float] = (0.0, 0.0),
+        heading: float | None = None,
+    ) -> Any:
+        """Execute a symbolic intent by recording it."""
+        self.record_intent(intent)
+        from wow_bot.actuation.mapper import ActionResult, ActionStatus
+
+        return ActionResult(
+            status=ActionStatus.SUCCESS,
+            latency_ms=0.0,
+            notes="simulation",
+        )
+
+    @property
+    def intents(self) -> tuple[Any, ...]:
+        """Return defensive copy of recorded symbolic intents."""
+        return tuple(self._intents)

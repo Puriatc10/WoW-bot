@@ -11,7 +11,7 @@ from typing import Any, cast
 
 import pytest
 
-from wow_bot.actuation.mapper import MoveTo
+from wow_bot.actuation.mapper import Cast, MoveTo
 from wow_bot.combat.loop import (
     CombatLoop,
     CombatLoopConfig,
@@ -259,15 +259,15 @@ def test_decide_stand_and_cast_rotation_spell() -> None:
     rng = random.Random(42)
 
     intent = loop.decide(FSMState.COMBAT, state, meta, 1.0, rng)
-    assert isinstance(intent, MoveTo)
-    assert intent.x == 12.5
-    assert intent.y == 14.5
+    assert isinstance(intent, Cast)
+    assert intent.spell_id == "fireball"
+    assert intent.target_id == "mob_1"
     assert loop.last_reason() == "cast"
     assert loop.last_spell_id() == "fireball"
 
 
 def test_decide_auto_attack_when_gcd_ready() -> None:
-    """Verify decide returns auto_attack stand-and-cast when rotation returns None, gcd is ready, and target in range."""
+    """Verify decide returns auto_attack cast when rotation returns None, gcd is ready, and target in range."""
     loop = _make_loop()
     mob = FakeEntity(entity_id="mob_1", distance=5.0)
     state = FakeCombatState(
@@ -282,9 +282,9 @@ def test_decide_auto_attack_when_gcd_ready() -> None:
     rng = random.Random(42)
 
     intent = loop.decide(FSMState.COMBAT, state, meta, 1.0, rng)
-    assert isinstance(intent, MoveTo)
-    assert intent.x == 3.0
-    assert intent.y == 4.0
+    assert isinstance(intent, Cast)
+    assert intent.spell_id == "auto_attack"
+    assert intent.target_id == "mob_1"
     assert loop.last_reason() == "auto_attack"
     assert loop.last_spell_id() == "auto_attack"
 
@@ -326,9 +326,9 @@ def test_decide_auto_attack_when_wait_for_gcd_false() -> None:
     rng = random.Random(42)
 
     intent = loop.decide(FSMState.COMBAT, state, meta, 1.0, rng)
-    assert isinstance(intent, MoveTo)
-    assert intent.x == 8.0
-    assert intent.y == 9.0
+    assert isinstance(intent, Cast)
+    assert intent.spell_id == "auto_attack"
+    assert intent.target_id == "mob_1"
     assert loop.last_reason() == "auto_attack"
     assert loop.last_spell_id() == "auto_attack"
 
@@ -533,9 +533,9 @@ def test_fsm_behavior_compatibility() -> None:
     fsm._state = FSMState.COMBAT
 
     intent = fsm.tick(cast(Any, state), cast(Any, meta), now=10.0)
-    assert isinstance(intent, MoveTo)
-    assert intent.x == state.self_x
-    assert intent.y == state.self_y
+    assert isinstance(intent, Cast)
+    assert intent.spell_id == "fireball"
+    assert intent.target_id == "mob_1"
 
 
 def test_static_ast_check_imports() -> None:

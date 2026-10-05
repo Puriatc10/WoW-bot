@@ -322,6 +322,30 @@ After T-FIX-07 merges, this exception is closed. Any future edit to a
 module that STRATEGY A treats as FROZEN requires its own explicit
 exception recorded in this file.
 
+### 5.12 Bounded exception: T-FIX-08 Gameplay primitives
+
+The task T-FIX-08 authorizes a single, bounded exception to STRATEGY A.
+Its sole purpose is to add distinct symbolic intents for gameplay primitives
+(`Cast`, `Loot`, `VendorInteract`, `Jump`) and heading-aware movement mapping to
+`src/wow_bot/actuation/mapper.py`, emit real primitives instead of no-op `MoveTo`/`Turn`
+conventions in `src/wow_bot/combat/loop.py`, `src/wow_bot/farm/loot.py`,
+`src/wow_bot/farm/vendor.py`, and `src/wow_bot/executor/recovery.py`, and support
+symbolic recording of these intents in `src/wow_bot/executor/controller.py`,
+`src/wow_bot/actuation/actuator.py`, and `src/wow_bot/actuation/humanized.py`.
+This is the only file scope of this exception in frozen pre-lab modules:
+`src/wow_bot/actuation/mapper.py`, `src/wow_bot/combat/loop.py`,
+`src/wow_bot/farm/loot.py`, `src/wow_bot/farm/vendor.py`,
+`src/wow_bot/executor/recovery.py`, `src/wow_bot/executor/controller.py`,
+`src/wow_bot/actuation/actuator.py`, and `src/wow_bot/actuation/humanized.py`.
+
+It does NOT authorize rotation policy/priority changes, cooldown modelling,
+changing the `GameState` schema, modifying `SafetyLayer`, `Session`, or `Config`,
+or adding any OS input outside `actuation/drivers/`.
+
+After T-FIX-08 merges, this exception is closed. Any future edit to a module that
+STRATEGY A treats as FROZEN requires its own explicit exception recorded in this file.
+
+
 ### 5.2 Source of Tasks
 
 Tasks are defined exclusively in `LAB_PHASE_ROADMAP.md`. Do not invent

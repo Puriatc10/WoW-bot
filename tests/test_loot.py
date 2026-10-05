@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from wow_bot.actuation.mapper import MoveTo
+from wow_bot.actuation.mapper import Loot, MoveTo
 from wow_bot.executor.fsm_v2 import Behavior
 from wow_bot.executor.states import FSMState
 from wow_bot.farm.loot import (
@@ -203,16 +203,15 @@ def test_decide_out_of_reach_without_coordinates() -> None:
 
 
 def test_decide_in_reach_success(tmp_path: Path) -> None:
-    """decide with target_distance <= reach returns MoveTo(self_x, self_y), sets SUCCESS, emits loot_attempt."""
+    """decide with target_distance <= reach returns Loot(target_id), sets SUCCESS, emits loot_attempt."""
     session = Session.start(DummyConfig(session_root=tmp_path))  # type: ignore[arg-type]
     controller = LootController(config=LootConfig(loot_reach_units=2.5), session=session)
     state = FakeLootState(target_distance=1.5, self_x=10.0, self_y=20.0)
     rng = random.Random(42)
 
     res = controller.decide(FSMState.LOOTING, state, {}, 100.0, rng)
-    assert isinstance(res, MoveTo)
-    assert res.x == 10.0
-    assert res.y == 20.0
+    assert isinstance(res, Loot)
+    assert res.target_id == "mob_1"
     assert controller.last_status() == LootStatus.SUCCESS
 
     session.close("test")
@@ -232,7 +231,8 @@ def test_decide_attempts_counter_and_exceeded(tmp_path: Path) -> None:
 
     for attempt in range(1, 4):
         res = controller.decide(FSMState.LOOTING, state, {}, 100.0, rng)
-        assert isinstance(res, MoveTo)
+        assert isinstance(res, Loot)
+        assert res.target_id == "corpse_1"
         assert controller.attempts_for("corpse_1") == attempt
         assert controller.last_status() == LootStatus.SUCCESS
 

@@ -4,6 +4,7 @@ from wow_bot.executor.controller import (
     SUPPORTED_MOUSE_BUTTONS,
     Controller,
     ControllerCommand,
+    SimulationController,
 )
 from wow_bot.executor.states import (
     TRANSITION_TABLE,
@@ -23,6 +24,7 @@ __all__ = [
     "Controller",
     "ControllerCommand",
     "FSMState",
+    "SimulationController",
     "StateSpec",
     "TransitionError",
     "all_states",

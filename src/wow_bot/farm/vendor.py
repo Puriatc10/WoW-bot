@@ -29,7 +29,12 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
-from wow_bot.actuation.mapper import ActionResult, ActionStatus, Intent, MoveTo
+from wow_bot.actuation.mapper import (
+    ActionResult,
+    ActionStatus,
+    Intent,
+    VendorInteract,
+)
 from wow_bot.nav.navigator import Navigator, NavStatus
 
 if TYPE_CHECKING:
@@ -399,7 +404,7 @@ class VendorController:
         sell_steps = 0
         if state.inventory_count > 0:
             while sell_steps < self._config.max_sell_steps:
-                intent = MoveTo(x=vendor.x, y=vendor.y)
+                intent = VendorInteract(vendor_entity=vendor.node_id, action="sell")
                 try:
                     act_result = self._actuator.execute(
                         intent, position=(state.self_x, state.self_y)
@@ -450,7 +455,7 @@ class VendorController:
                     self._session.write_event({"event": "vendor_repair_skipped", "reason": reason})
             else:
                 while repair_steps < self._config.max_repair_steps:
-                    intent = MoveTo(x=vendor.x, y=vendor.y)
+                    intent = VendorInteract(vendor_entity=vendor.node_id, action="repair")
                     try:
                         act_result = self._actuator.execute(
                             intent, position=(state.self_x, state.self_y)

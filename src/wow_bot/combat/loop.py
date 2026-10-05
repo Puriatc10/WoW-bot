@@ -6,7 +6,7 @@ import random
 from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
-from wow_bot.actuation.mapper import Intent, MoveTo
+from wow_bot.actuation.mapper import Cast, Intent, MoveTo
 from wow_bot.combat.rotation import RotationTable
 from wow_bot.combat.targeting import TargetEntityLike, TargetSelector
 from wow_bot.executor.states import FSMState
@@ -133,15 +133,9 @@ class CombatLoop:
                 return entity
         return None
 
-    def _cast_intent(self, spell_id: str, x: float, y: float) -> MoveTo:
-        """
-        Return a MoveTo whose x, y equal the caster's current position (a "stand and cast" intent).
-
-        Rationale: the current mapper (T1.3) has no Cast intent; a zero-distance MoveTo is
-        a deterministic no-op that the actuator can execute without moving.
-        When a future phase adds a Cast intent to the mapper, this helper will be the single place to change.
-        """
-        return MoveTo(x=x, y=y)
+    def _cast_intent(self, spell_id: str, target_id: str | None = None) -> Cast:
+        """Return a Cast intent carrying the selected spell_id and target_id."""
+        return Cast(spell_id=spell_id, target_id=target_id)
 
     def decide(
         self,
@@ -216,8 +210,7 @@ class CombatLoop:
                 self._last_spell_id = cfg.attackable_spell_id
                 return self._cast_intent(
                     cfg.attackable_spell_id,
-                    game_state.self_x,
-                    game_state.self_y,
+                    target_id=current_target_id,
                 )
 
             self._last_reason = "nothing_to_do"
@@ -226,4 +219,4 @@ class CombatLoop:
 
         self._last_reason = "cast"
         self._last_spell_id = spell
-        return self._cast_intent(spell, game_state.self_x, game_state.self_y)
+        return self._cast_intent(spell, target_id=current_target_id)

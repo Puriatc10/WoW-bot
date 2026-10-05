@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from wow_bot.actuation.mapper import MoveTo, Turn
+from wow_bot.actuation.mapper import Jump, MoveTo, Turn
 from wow_bot.executor.fsm_v2 import GameStateLike, MetaStateLike
 from wow_bot.executor.recovery import (
     RecoveryBehavior,
@@ -137,10 +137,10 @@ def test_camera_sweep_intent_bounds_and_determinism() -> None:
 
 
 def test_jump_intent() -> None:
-    """jump_intent returns Turn(angle_rad=0.0)."""
+    """jump_intent returns Jump(direction='forward')."""
     intent = jump_intent()
-    assert isinstance(intent, Turn)
-    assert intent.angle_rad == 0.0
+    assert isinstance(intent, Jump)
+    assert intent.direction == "forward"
 
 
 def test_alternative_waypoint_intent_distance_and_sampling() -> None:
@@ -268,7 +268,7 @@ def test_recovery_planner_dispatch_jump() -> None:
     rng = random.Random(1)
     intent = planner.plan(rng, attempts_so_far=0)
 
-    assert intent == Turn(angle_rad=0.0)
+    assert intent == Jump(direction="forward")
     assert pos_calls == 0
     assert heading_calls == 0
     assert planner.last_behavior() == RecoveryBehaviorKind.JUMP

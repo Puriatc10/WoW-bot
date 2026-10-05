@@ -22,7 +22,7 @@ import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Protocol
 
-from wow_bot.actuation.mapper import Intent, MoveTo
+from wow_bot.actuation.mapper import Intent, Loot, MoveTo
 from wow_bot.executor.states import FSMState
 
 if TYPE_CHECKING:
@@ -255,7 +255,7 @@ class LootController:
                 })
             return None
 
-        intent = MoveTo(x=game_state.self_x, y=game_state.self_y)
+        intent = Loot(target_id=current_id)
         self._last_status = LootStatus.SUCCESS
         if self._session is not None:
             self._session.write_event({

@@ -116,7 +116,7 @@ Tier names are unchanged from the original revision of this document.
 | 2 — Execution Path (تیک → اکشن) | T-FIX-05 | FSM IDLE→SCANNING progression | DONE |
 | 2 | T-FIX-06 | Reflex/Watchdog lifecycle | DONE |
 | 2 | T-FIX-07 | Safety lifecycle wiring | DONE |
-| 2 | T-FIX-08 | Gameplay primitives (cast/loot/vendor/jump) | PENDING |
+| 2 | T-FIX-08 | Gameplay primitives (cast/loot/vendor/jump) | DONE |
 | 3 — Scientific Model | T-FIX-09 | Oscillator→drives coupling investigation | PENDING |
 | 3 | T-FIX-10 | Spectral acceptance resolution | PENDING |
 | 4 — Telemetry & Observability (صداقت داده) | T-FIX-11 | ProgressSample contract alignment | PENDING |
@@ -810,7 +810,7 @@ the kill-switch key implementation.
 
 ## T-FIX-08 — Gameplay primitives (cast/loot/vendor/jump)
 
-**Status:** PENDING
+**Status:** DONE
 **Depends on:** T-FIX-05
 **Evidence:** the mapper's `Intent` union is only `MoveTo | Turn`
 (`actuation/mapper.py:38`). Combat casts are expressed as a zero-distance
@@ -839,12 +839,12 @@ also picks world-axis keys without using heading (`actuation/mapper.py:139`).
 - `dry_run=False` in `MOCK_MODE` remains rejected.
 
 **Acceptance:**
-- [ ] Test: each primitive produces its own distinct intent/command.
-- [ ] Test: loot and vendor no longer emit a disguised `MoveTo`.
-- [ ] Test: movement key selection is heading-correct (a rotated facing
+- [x] Test: each primitive produces its own distinct intent/command.
+- [x] Test: loot and vendor no longer emit a disguised `MoveTo`.
+- [x] Test: movement key selection is heading-correct (a rotated facing
       produces different keys).
-- [ ] Test: `MOCK_MODE` records all four primitives symbolically.
-- [ ] No CI test requires a live game client.
+- [x] Test: `MOCK_MODE` records all four primitives symbolically.
+- [x] No CI test requires a live game client.
 
 **Out of scope:** rotation content and priority policy; real client
 testing; cooldown modelling (T-FIX-21).
@@ -2126,4 +2126,12 @@ fact been committed in `d81ce69`, and are now `DONE`.
   shutdown paths; `make_driver` enforces `lab_mode=True` for live OS input
   drivers (`pynput`, `interception`). Added `tests/test_safety_lifecycle.py`
   (8 tests verifying all acceptance criteria). `ruff` and `mypy` clean.
+- **T-FIX-08** — DONE. Replaced disguised `MoveTo` and `Turn(0.0)` conventions with
+  explicit gameplay primitives: `Cast`, `Loot`, `VendorInteract`, and `Jump` in
+  `actuation/mapper.py`; implemented heading-aware movement mapping (`cos`/`sin`
+  projection onto character facing); updated `CombatLoop` (`Cast`), `LootController`
+  (`Loot`), `VendorController` (`VendorInteract`), and `jump_intent` (`Jump`);
+  added `SimulationController` in `executor/controller.py` for symbolic recording
+  in `MOCK_MODE` while rejecting `dry_run=False`. Added `tests/test_gameplay_primitives.py`
+  (10 tests covering all 5 acceptance criteria). `ruff` and `mypy` clean.
 

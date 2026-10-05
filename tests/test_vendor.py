@@ -11,7 +11,11 @@ from typing import Any
 import pytest
 
 import wow_bot.farm as farm_pkg
-from wow_bot.actuation.mapper import ActionResult, ActionStatus, MoveTo
+from wow_bot.actuation.mapper import (
+    ActionResult,
+    ActionStatus,
+    VendorInteract,
+)
 from wow_bot.farm.vendor import (
     VendorConfig,
     VendorController,
@@ -427,9 +431,9 @@ def test_sell_phase_performs_sell_chunk_size_steps(tmp_path: Path) -> None:
     assert res.sell_steps == 1
     assert len(act.calls) == 1
     intent, pos = act.calls[0]
-    assert isinstance(intent, MoveTo)
-    assert intent.x == 100.0
-    assert intent.y == 200.0
+    assert isinstance(intent, VendorInteract)
+    assert intent.vendor_entity == 1
+    assert intent.action == "sell"
     assert pos == (10.0, 20.0)
 
 

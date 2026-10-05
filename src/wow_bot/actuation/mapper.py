@@ -2,7 +2,7 @@
 
 import math
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import Protocol, runtime_checkable
 
@@ -11,7 +11,7 @@ from wow_bot.actuation.driver import InputDriver
 
 @dataclass(frozen=True)
 class Keymap:
-    """Configuration mapping movement directions to input key strings."""
+    """Configuration mapping movement directions and gameplay actions to input key strings."""
 
     forward: str = "w"
     back: str = "s"
@@ -19,6 +19,11 @@ class Keymap:
     right: str = "d"
     turn_left: str = "q"
     turn_right: str = "e"
+    jump: str = "space"
+    interact: str = "f"
+    loot: str = "f"
+    default_cast_key: str = "1"
+    spell_keys: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -36,7 +41,37 @@ class Turn:
     angle_rad: float
 
 
-Intent = MoveTo | Turn
+@dataclass(frozen=True)
+class Cast:
+    """Symbolic spell casting intent carrying spell_id and optional target_id."""
+
+    spell_id: str
+    target_id: str | None = None
+
+
+@dataclass(frozen=True)
+class Loot:
+    """Symbolic corpse looting intent carrying optional target_id."""
+
+    target_id: str | None = None
+
+
+@dataclass(frozen=True)
+class VendorInteract:
+    """Symbolic vendor interaction intent carrying vendor_entity and action."""
+
+    vendor_entity: str | int | None = None
+    action: str = "interact"
+
+
+@dataclass(frozen=True)
+class Jump:
+    """Symbolic character jump intent carrying jump direction."""
+
+    direction: str = "forward"
+
+
+Intent = MoveTo | Turn | Cast | Loot | VendorInteract | Jump
 
 
 class ActionStatus(str, Enum):
@@ -100,6 +135,7 @@ class ActionMapper:
         arrival_tolerance: float = 0.5,
         move_step_duration_s: float = 0.15,
         turn_step_duration_s: float = 0.10,
+        action_step_duration_s: float = 0.05,
         assumed_speed_units_per_s: float = 5.0,
         assumed_turn_rate_rad_per_s: float = 3.14,
         delay: DelayProvider | None = None,
@@ -110,6 +146,8 @@ class ActionMapper:
             raise ValueError("move_step_duration_s must be non-negative")
         if turn_step_duration_s < 0:
             raise ValueError("turn_step_duration_s must be non-negative")
+        if action_step_duration_s < 0:
+            raise ValueError("action_step_duration_s must be non-negative")
         if assumed_speed_units_per_s <= 0:
             raise ValueError("assumed_speed_units_per_s must be positive")
         if assumed_turn_rate_rad_per_s <= 0:
@@ -120,6 +158,7 @@ class ActionMapper:
         self._arrival_tolerance = arrival_tolerance
         self._move_step_duration_s = move_step_duration_s
         self._turn_step_duration_s = turn_step_duration_s
+        self._action_step_duration_s = action_step_duration_s
         self._assumed_speed_units_per_s = assumed_speed_units_per_s
         self._assumed_turn_rate_rad_per_s = assumed_turn_rate_rad_per_s
         self._delay: DelayProvider = delay if delay is not None else RealDelay()
@@ -129,8 +168,9 @@ class ActionMapper:
         intent: Intent,
         *,
         position: tuple[float, float],
+        heading: float | None = None,
     ) -> ActionResult:
-        """Execute a single step for the given symbolic intent from the current position."""
+        """Execute a single step for the given symbolic intent from the current position and heading."""
         start_time = self._driver.now()
 
         if isinstance(intent, MoveTo):
@@ -146,15 +186,23 @@ class ActionMapper:
                     notes="arrived",
                 )
 
+            if heading is not None:
+                f_comp = dx * math.cos(heading) + dy * math.sin(heading)
+                r_comp = dx * math.sin(heading) - dy * math.cos(heading)
+            else:
+                f_comp = dy
+                r_comp = dx
+
             keys_to_press: list[str] = []
-            if dy > 0:
+            eps = 1e-4
+            if f_comp > eps:
                 keys_to_press.append(self._keymap.forward)
-            elif dy < 0:
+            elif f_comp < -eps:
                 keys_to_press.append(self._keymap.back)
 
-            if dx > 0:
+            if r_comp > eps:
                 keys_to_press.append(self._keymap.right)
-            elif dx < 0:
+            elif r_comp < -eps:
                 keys_to_press.append(self._keymap.left)
 
             step_s = min(
@@ -227,6 +275,128 @@ class ActionMapper:
                 status=ActionStatus.SUCCESS,
                 latency_ms=latency_ms,
                 notes=f"step={step_s:.3f}",
+            )
+
+        elif isinstance(intent, Cast):
+            key = self._keymap.spell_keys.get(intent.spell_id, self._keymap.default_cast_key)
+            step_s = self._action_step_duration_s
+            pressed_keys = []
+            exc_in_try = False
+            try:
+                self._driver.key_down(key)
+                pressed_keys.append(key)
+                self._delay.wait(step_s)
+            except Exception:
+                exc_in_try = True
+                raise
+            finally:
+                while pressed_keys:
+                    k = pressed_keys.pop()
+                    try:
+                        self._driver.key_up(k)
+                    except Exception:
+                        if not exc_in_try:
+                            raise
+
+            latency_ms = (self._driver.now() - start_time) * 1000.0
+            return ActionResult(
+                status=ActionStatus.SUCCESS,
+                latency_ms=latency_ms,
+                notes=f"cast:{intent.spell_id}",
+            )
+
+        elif isinstance(intent, Loot):
+            key = self._keymap.loot
+            step_s = self._action_step_duration_s
+            pressed_keys = []
+            exc_in_try = False
+            try:
+                self._driver.key_down(key)
+                pressed_keys.append(key)
+                self._delay.wait(step_s)
+            except Exception:
+                exc_in_try = True
+                raise
+            finally:
+                while pressed_keys:
+                    k = pressed_keys.pop()
+                    try:
+                        self._driver.key_up(k)
+                    except Exception:
+                        if not exc_in_try:
+                            raise
+
+            latency_ms = (self._driver.now() - start_time) * 1000.0
+            target_str = intent.target_id or ""
+            return ActionResult(
+                status=ActionStatus.SUCCESS,
+                latency_ms=latency_ms,
+                notes=f"loot:{target_str}",
+            )
+
+        elif isinstance(intent, VendorInteract):
+            key = self._keymap.interact
+            step_s = self._action_step_duration_s
+            pressed_keys = []
+            exc_in_try = False
+            try:
+                self._driver.key_down(key)
+                pressed_keys.append(key)
+                self._delay.wait(step_s)
+            except Exception:
+                exc_in_try = True
+                raise
+            finally:
+                while pressed_keys:
+                    k = pressed_keys.pop()
+                    try:
+                        self._driver.key_up(k)
+                    except Exception:
+                        if not exc_in_try:
+                            raise
+
+            latency_ms = (self._driver.now() - start_time) * 1000.0
+            return ActionResult(
+                status=ActionStatus.SUCCESS,
+                latency_ms=latency_ms,
+                notes=f"vendor:{intent.action}:{intent.vendor_entity}",
+            )
+
+        elif isinstance(intent, Jump):
+            keys = [self._keymap.jump]
+            if intent.direction == "forward":
+                keys.insert(0, self._keymap.forward)
+            elif intent.direction == "back":
+                keys.insert(0, self._keymap.back)
+            elif intent.direction == "left":
+                keys.insert(0, self._keymap.left)
+            elif intent.direction == "right":
+                keys.insert(0, self._keymap.right)
+            step_s = self._action_step_duration_s
+            pressed_keys = []
+            exc_in_try = False
+            try:
+                for k in keys:
+                    self._driver.key_down(k)
+                    pressed_keys.append(k)
+                self._delay.wait(step_s)
+            except Exception:
+                exc_in_try = True
+                raise
+            finally:
+                while pressed_keys:
+                    k = pressed_keys.pop()
+                    try:
+                        self._driver.key_up(k)
+                    except Exception:
+                        if not exc_in_try:
+                            raise
+
+            latency_ms = (self._driver.now() - start_time) * 1000.0
+            return ActionResult(
+                status=ActionStatus.SUCCESS,
+                latency_ms=latency_ms,
+                notes=f"jump:{intent.direction}",
             )
 
         else:

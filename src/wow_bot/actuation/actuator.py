@@ -23,8 +23,9 @@ class Actuator(Protocol):
         intent: Intent,
         *,
         position: tuple[float, float],
+        heading: float | None = None,
     ) -> ActionResult:
-        """Execute a single action intent from the given starting position."""
+        """Execute a single action intent from the given starting position and optional heading."""
         ...
 
     def abort(self, reason: str) -> None:
@@ -52,6 +53,7 @@ class NullActuator:
         intent: Intent,
         *,
         position: tuple[float, float],
+        heading: float | None = None,
     ) -> ActionResult:
         """Record execution request and return synthetic success result."""
         self._recorded.append((intent, position))
@@ -115,6 +117,7 @@ class RealActuator:
         intent: Intent,
         *,
         position: tuple[float, float],
+        heading: float | None = None,
     ) -> ActionResult:
         """Execute a single intent step following strict safety, focus, and logging sequence."""
         # 1. Safety check
@@ -166,7 +169,7 @@ class RealActuator:
         })
 
         # 5. Execute action step via mapper
-        result = self._mapper.execute(intent, position=position)
+        result = self._mapper.execute(intent, position=position, heading=heading)
 
         # 6. Emit result event
         self._session.write_event({

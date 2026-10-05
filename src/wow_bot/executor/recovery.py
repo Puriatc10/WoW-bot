@@ -10,7 +10,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
 
-from wow_bot.actuation.mapper import Intent, MoveTo, Turn
+from wow_bot.actuation.mapper import Intent, Jump, MoveTo, Turn
 from wow_bot.executor.fsm_v2 import GameStateLike, MetaStateLike
 from wow_bot.executor.states import FSMState
 
@@ -115,14 +115,9 @@ def camera_sweep_intent(
     return Turn(angle_rad=angle)
 
 
-def jump_intent() -> Intent:
-    """Generate a jump intent placeholder.
-
-    The InputDriver protocol from T1.1 does not expose a jump primitive;
-    a no-op turn is the safe placeholder used until a later phase extends
-    the mapper with a Jump intent.
-    """
-    return Turn(angle_rad=0.0)
+def jump_intent(direction: str = "forward") -> Intent:
+    """Generate a character jump intent carrying explicit jump direction."""
+    return Jump(direction=direction)
 
 
 def alternative_waypoint_intent(
