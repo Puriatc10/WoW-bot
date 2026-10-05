@@ -53,6 +53,12 @@ from wow_bot.perception.perception_config import (
     load_perception_config,
     load_perception_config_from_dict,
 )
+from wow_bot.perception.port import (
+    PerceptionBackendError,
+    PerceptionPort,
+    PerceptionPortError,
+    PerceptionStaleError,
+)
 from wow_bot.perception.protocol import PerceptionBackend
 from wow_bot.perception.resource_table import EMPTY_RESOURCE_TABLE, ResourceTable
 from wow_bot.perception.views import (
@@ -96,9 +102,13 @@ __all__ = [
     "PanelObservations",
     "PanelReaders",
     "PerceptionBackend",
+    "PerceptionBackendError",
     "PerceptionConfig",
     "PerceptionConfigError",
     "PerceptionDependencyError",
+    "PerceptionPort",
+    "PerceptionPortError",
+    "PerceptionStaleError",
     "ReactiveView",
     "ResourceTable",
     "RuntimeContext",

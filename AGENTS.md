@@ -243,6 +243,26 @@ After T-FIX-22 merges, this exception is closed. Any future edit to a
 module that STRATEGY A treats as FROZEN requires its own explicit
 exception recorded in this file.
 
+### 5.8 Bounded exception: T-FIX-20 Async perception port and runner bridge
+
+The task T-FIX-20 authorizes a single, bounded exception to STRATEGY A.
+Its sole purpose is to allow `src/wow_bot/lab/runner_v2.py` to accept
+either a `PerceptionBackend` / `PerceptionPort` or the pre-existing
+synchronous `game_state_source: Callable[[], object]`, enabling async perception
+backends to drive the lab runner while keeping the existing synchronous callable
+path working unchanged, adding the `snapshot_staleness_ms` configuration field,
+and supporting bounded cancellation during in-flight cycles. This is the only
+file scope of this exception in frozen pre-lab modules: `src/wow_bot/lab/runner_v2.py`.
+
+It does NOT authorize renaming or removing any existing parameter or field of `LabRuntime` or
+`LabRunnerConfig`, changing default behavior for synchronous callers, modifying
+`SafetyLayer`, `Session`, or `Config`, modifying `GameState` schema, changing
+consumer Protocols, or changing any Phase 12 artifact.
+
+After T-FIX-20 merges, this exception is closed. Any future edit to a
+module that STRATEGY A treats as FROZEN requires its own explicit
+exception recorded in this file.
+
 ### 5.2 Source of Tasks
 
 Tasks are defined exclusively in `LAB_PHASE_ROADMAP.md`. Do not invent

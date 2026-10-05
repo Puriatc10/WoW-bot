@@ -107,12 +107,12 @@ Tier names are unchanged from the original revision of this document.
 | 1 — Perception Contract (پایه Phase 13) | T-FIX-03 | Unified Perception Protocol | DONE |
 | 1 | T-FIX-03.5 | ADR-002 GameState extension (design) | DONE |
 | 1 | T-FIX-03.6 | GameState extension (implementation) | DONE |
-| 1 | T-FIX-04 | Reference MockAdapter | PENDING |
+| 1 | T-FIX-04 | Reference MockAdapter | DONE |
 | 1b — Perception Contract completion (ADR-002) | T-FIX-23 | PERCEPTION.md vision channel extensions | DONE |
 | 1b | T-FIX-21 | Adapter derivation and runtime context | DONE |
 | 1b | T-FIX-24 | Per-view projection expectations (xfail split) | DONE |
 | 1b | T-FIX-22 | perception_confidence plumbing and thresholding | DONE |
-| 1c — Perception → runtime bridge | T-FIX-20 | Async perception port and loop scheduling | PROPOSED |
+| 1c — Perception → runtime bridge | T-FIX-20 | Async perception port and loop scheduling | DONE |
 | 2 — Execution Path (تیک → اکشن) | T-FIX-05 | FSM IDLE→SCANNING progression | PENDING |
 | 2 | T-FIX-06 | Reflex/Watchdog lifecycle | PENDING |
 | 2 | T-FIX-07 | Safety lifecycle wiring | PENDING |
@@ -628,8 +628,7 @@ channel rows (T-FIX-23); the `GameState` schema.
 
 ## T-FIX-20 — Async perception port and loop scheduling
 
-**Status:** PROPOSED — not present in `LAB_PHASE_ROADMAP.md`, ADR-001, or
-ADR-002. Requires ratification before implementation.
+**Status:** DONE
 **Depends on:** T-FIX-04
 **Why this exists:** the review records that `lab/runner_v2.py` accepts a
 **synchronous** `game_state_source: Callable[[], object]`, while every
@@ -665,15 +664,15 @@ precisely the merge the whole roadmap exists to enable.
 - Existing synchronous-source tests and behaviour remain unchanged.
 
 **Acceptance:**
-- [ ] Test: a real-shaped async backend drives the runner through the port
+- [x] Test: a real-shaped async backend drives the runner through the port
       and a cycle observes the backend's snapshots in order.
-- [ ] Test: staleness is reported explicitly; a stale snapshot is never
+- [x] Test: staleness is reported explicitly; a stale snapshot is never
       silently substituted.
-- [ ] Test: cancelling a cycle returns within a bounded time even while a
+- [x] Test: cancelling a cycle returns within a bounded time even while a
       synchronous navigation or sleep call is in flight.
-- [ ] Test: the pre-existing synchronous `game_state_source` path still
+- [x] Test: the pre-existing synchronous `game_state_source` path still
       works and its tests are untouched.
-- [ ] No consumer or frozen signature changes beyond the bounded runner
+- [x] No consumer or frozen signature changes beyond the bounded runner
       change, which carries its own AGENTS.md §5 exception.
 
 **Out of scope:** real screen capture or vision; implementing

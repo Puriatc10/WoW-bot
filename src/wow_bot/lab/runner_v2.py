@@ -60,6 +60,8 @@ from wow_bot.farm.vendor import (
 from wow_bot.nav.graph import GraphConfig, NavGraph, build_graph
 from wow_bot.nav.navigator import NavConfig, Navigator, NavStatus, SimpleReplanner
 from wow_bot.nav.telemetry import RealCpuSource, TelemetryCollector, TelemetryConfig
+from wow_bot.perception.port import PerceptionPort
+from wow_bot.perception.protocol import PerceptionBackend
 from wow_bot.reflex.loop import NullClock, RealClock, ReflexLoop
 from wow_bot.reflex.rules import default_rules
 from wow_bot.reflex.sinks import ActuatorAbortSink, FSMSink, RecoverySink
@@ -118,6 +120,7 @@ class LabRunnerConfig:
     summarize_every_cycles: int = 5
     vendor_repair_threshold: float = 0.5
     fail_on_async_context: bool = True
+    snapshot_staleness_ms: float = 500.0
 
     def __post_init__(self) -> None:
         """Validate configuration parameter bounds."""
@@ -164,6 +167,15 @@ class LabRunnerConfig:
             )
         if not isinstance(self.fail_on_async_context, bool):
             raise TypeError("fail_on_async_context must be a boolean")
+        if (
+            isinstance(self.snapshot_staleness_ms, bool)
+            or not isinstance(self.snapshot_staleness_ms, (int, float))
+            or not math.isfinite(float(self.snapshot_staleness_ms))
+            or float(self.snapshot_staleness_ms) <= 0.0
+        ):
+            raise ValueError(
+                f"snapshot_staleness_ms must be a positive float, got {self.snapshot_staleness_ms!r}"
+            )
 
 
 @dataclass(frozen=True)
@@ -208,6 +220,7 @@ class LabRuntime:
     telemetry: TelemetryCollector
     telemetry_config: TelemetryConfig
     session_events_total: int
+    perception_port: PerceptionPort | None = None
 
 
 @dataclass(frozen=True)
@@ -235,6 +248,42 @@ class LabRunResult:
             "shutdown_report": report_json,
             "reason": self.reason,
         }
+
+
+class _CancellableSleep:
+    """Sleep function with bounded latency when cancelled or stopped."""
+
+    def __init__(
+        self,
+        safety: SafetyLayer,
+        stop_event: Any | None = None,
+        base_sleep: Callable[[float], None] = time.sleep,
+    ) -> None:
+        self._safety = safety
+        self._stop_event = stop_event
+        self._base_sleep = base_sleep
+
+    def set_stop_event(self, stop_event: Any) -> None:
+        self._stop_event = stop_event
+
+    def __call__(self, seconds: float) -> None:
+        if seconds <= 0:
+            return
+        end_time = time.monotonic() + seconds
+        while True:
+            if self._safety.is_aborted():
+                return
+            if (
+                self._stop_event is not None
+                and hasattr(self._stop_event, "is_set")
+                and self._stop_event.is_set()
+            ):
+                return
+            remaining = end_time - time.monotonic()
+            if remaining <= 0:
+                break
+            slice_time = min(remaining, 0.02)
+            self._base_sleep(slice_time)
 
 
 class _NullLlmClient:
@@ -332,11 +381,13 @@ def _sync_world_sync(
         asyncio.run(world_sync.sync_once(state))
     else:
         if session is not None:
-            session.write_event({
-                "event": "sync_skipped",
-                "reason": "running_event_loop_in_sync_runner",
-                "operation": "world_sync",
-            })
+            session.write_event(
+                {
+                    "event": "sync_skipped",
+                    "reason": "running_event_loop_in_sync_runner",
+                    "operation": "world_sync",
+                }
+            )
 
 
 def _sync_summarize(
@@ -354,11 +405,13 @@ def _sync_summarize(
         return asyncio.run(summarize(world, pos, config=SummaryConfig()))
     else:
         if session is not None:
-            session.write_event({
-                "event": "sync_skipped",
-                "reason": "running_event_loop_in_sync_runner",
-                "operation": "summarize",
-            })
+            session.write_event(
+                {
+                    "event": "sync_skipped",
+                    "reason": "running_event_loop_in_sync_runner",
+                    "operation": "summarize",
+                }
+            )
         return None
 
 
@@ -383,11 +436,13 @@ def _sync_resolve_vendor_node(
         )
     else:
         if session is not None:
-            session.write_event({
-                "event": "sync_skipped",
-                "reason": "running_event_loop_in_sync_runner",
-                "operation": "resolve_vendor_node",
-            })
+            session.write_event(
+                {
+                    "event": "sync_skipped",
+                    "reason": "running_event_loop_in_sync_runner",
+                    "operation": "resolve_vendor_node",
+                }
+            )
         return None
 
 
@@ -395,7 +450,9 @@ async def build_lab_runtime_async(
     *,
     config: object,
     session: Session,
-    game_state_source: Callable[[], object],
+    game_state_source: Callable[[], object] | None = None,
+    perception_backend: PerceptionBackend | None = None,
+    perception_port: PerceptionPort | None = None,
     meta_state_source: Callable[[], object],
     rotation_config: RotationConfig,
     farm_profile: FarmProfile,
@@ -417,7 +474,32 @@ async def build_lab_runtime_async(
 
     rcfg = runner_config if runner_config is not None else LabRunnerConfig()
     clk = clock if clock is not None else time.monotonic
-    slp = sleep if sleep is not None else time.sleep
+
+    port: PerceptionPort | None = None
+    state_source: Callable[[], object]
+    if perception_port is not None:
+        port = perception_port
+        state_source = port.sample
+    elif perception_backend is not None:
+        staleness_s = rcfg.snapshot_staleness_ms / 1000.0
+        port = PerceptionPort(perception_backend, staleness_bound_s=staleness_s, clock=clk)
+        state_source = port.sample
+    elif game_state_source is not None:
+        if isinstance(game_state_source, PerceptionPort):
+            port = game_state_source
+            state_source = port.sample
+        elif isinstance(game_state_source, PerceptionBackend):
+            staleness_s = rcfg.snapshot_staleness_ms / 1000.0
+            port = PerceptionPort(game_state_source, staleness_bound_s=staleness_s, clock=clk)
+            state_source = port.sample
+        elif callable(game_state_source):
+            state_source = game_state_source
+        else:
+            raise LabRunnerError(f"Invalid game_state_source: {game_state_source!r}")
+    else:
+        raise LabRunnerError(
+            "One of game_state_source, perception_port, or perception_backend must be provided"
+        )
 
     try:
         world, _report = await load_world(
@@ -436,6 +518,11 @@ async def build_lab_runtime_async(
         raise LabRunnerError(f"Failed to build NavGraph: {exc}") from exc
 
     safety = SafetyLayer(config=config, session=session)  # type: ignore[arg-type]
+    if sleep is not None:
+        slp = sleep
+    else:
+        slp = _CancellableSleep(safety=safety, base_sleep=time.sleep)
+
     driver = make_driver(driver_name, lab_mode=True)
     backend = focus_backend if focus_backend is not None else NullFocusBackend()
     focus = FocusManager(window_title, backend=backend)  # type: ignore[arg-type]
@@ -457,10 +544,10 @@ async def build_lab_runtime_async(
     )
 
     def pos_source() -> tuple[float, float]:
-        return _extract_position(game_state_source())
+        return _extract_position(state_source())
 
     def head_source() -> float:
-        return _extract_heading(game_state_source())
+        return _extract_heading(state_source())
 
     navigator = Navigator(
         graph=graph,
@@ -575,7 +662,7 @@ async def build_lab_runtime_async(
             deadline_s=start_t + max_sess_s, start_time_s=start_t
         )
         stuck_src = PositionStuckSignalSource(pos_source)
-        reactive_src = ReactiveCombatSource(game_state_source)  # type: ignore[arg-type]
+        reactive_src = ReactiveCombatSource(state_source)  # type: ignore[arg-type]
 
         bridge = FSMReflexBridge(fsm, clock=clk, session=session)
         abort_sink = ActuatorAbortSink(actuator)
@@ -609,6 +696,7 @@ async def build_lab_runtime_async(
             "summarize_every_cycles": rcfg.summarize_every_cycles,
             "vendor_repair_threshold": rcfg.vendor_repair_threshold,
             "fail_on_async_context": rcfg.fail_on_async_context,
+            "snapshot_staleness_ms": rcfg.snapshot_staleness_ms,
         },
     }
 
@@ -619,7 +707,7 @@ async def build_lab_runtime_async(
         session=session,
         clock=clk,
         sleep=slp,
-        game_state_source=game_state_source,
+        game_state_source=state_source,
         meta_state_source=meta_state_source,
         driver=driver,
         focus=focus,
@@ -651,6 +739,7 @@ async def build_lab_runtime_async(
         telemetry=telemetry,
         telemetry_config=telemetry_config,
         session_events_total=0,
+        perception_port=port,
     )
 
 
@@ -658,7 +747,9 @@ def build_lab_runtime(
     *,
     config: object,
     session: Session,
-    game_state_source: Callable[[], object],
+    game_state_source: Callable[[], object] | None = None,
+    perception_backend: PerceptionBackend | None = None,
+    perception_port: PerceptionPort | None = None,
     meta_state_source: Callable[[], object],
     rotation_config: RotationConfig,
     farm_profile: FarmProfile,
@@ -692,6 +783,8 @@ def build_lab_runtime(
             config=config,
             session=session,
             game_state_source=game_state_source,
+            perception_backend=perception_backend,
+            perception_port=perception_port,
             meta_state_source=meta_state_source,
             rotation_config=rotation_config,
             farm_profile=farm_profile,
@@ -760,9 +853,11 @@ async def _run_cycle(
     # Subsystem dispatch
     curr_fsm_state = runtime.fsm.current_state
 
-    if (
-        curr_fsm_state in (FSMState.LOOTING, FSMState.COMBAT)
-        or new_goal in ("loot", "grind_humans", "farm_herbs", "combat")
+    if curr_fsm_state in (FSMState.LOOTING, FSMState.COMBAT) or new_goal in (
+        "loot",
+        "grind_humans",
+        "farm_herbs",
+        "combat",
     ):
         intent = runtime.fsm.tick(state, meta, now=runtime.clock())
         if intent is not None:
@@ -859,14 +954,16 @@ def _finish_run(
         reason=reason,
     )
     if runtime.session is not None:
-        runtime.session.write_event({
-            "event": "lab_run_finished",
-            "status": status.value,
-            "cycles_completed": cycles_completed,
-            "failures": failures,
-            "duration_s": duration_s,
-            "reason": reason,
-        })
+        runtime.session.write_event(
+            {
+                "event": "lab_run_finished",
+                "status": status.value,
+                "cycles_completed": cycles_completed,
+                "failures": failures,
+                "duration_s": duration_s,
+                "reason": reason,
+            }
+        )
     return res
 
 
@@ -878,11 +975,7 @@ async def run_lab_loop_async(
 ) -> LabRunResult:
     """Asynchronously run the farm cycle loop using injected clock and sleeps."""
     rcfg = runtime.config_snapshot.get("runner_config", {})
-    max_c = (
-        max_cycles
-        if max_cycles is not None
-        else int(rcfg.get("max_cycles_per_run", 1000))
-    )
+    max_c = max_cycles if max_cycles is not None else int(rcfg.get("max_cycles_per_run", 1000))
     max_fails = int(rcfg.get("max_consecutive_failures", 5))
 
     if max_c < 1:
@@ -896,106 +989,153 @@ async def run_lab_loop_async(
     cached_vendor: VendorLocation | None = None
     last_summary: WorldSummary | None = None
 
-    while True:
-        if stop_event is not None and stop_event.is_set():
-            return _finish_run(
-                LabRunStatus.STOP_EVENT_SET,
-                cycles_completed,
-                failures,
-                start_time,
-                runtime,
-                reason="stop_event_set",
-            )
+    if stop_event is not None and isinstance(runtime.sleep, _CancellableSleep):
+        runtime.sleep.set_stop_event(stop_event)
 
-        if cycles_completed >= max_c:
-            return _finish_run(
-                LabRunStatus.MAX_CYCLES_REACHED,
-                cycles_completed,
-                failures,
-                start_time,
-                runtime,
-                reason="max_cycles_reached",
-            )
-
-        if consecutive_failures >= max_fails:
-            return _finish_run(
-                LabRunStatus.MAX_FAILURES_REACHED,
-                cycles_completed,
-                failures,
-                start_time,
-                runtime,
-                reason="max_consecutive_failures_reached",
-            )
-
+    managed_port = False
+    if runtime.perception_port is not None and not runtime.perception_port.is_running:
         try:
-            prev_goal, cached_vendor, failed, last_summary = await _run_cycle(
-                runtime, prev_goal, cached_vendor, cycles_completed, last_summary
+            await runtime.perception_port.pump_once()
+        except Exception:  # noqa: BLE001, S110
+            pass
+        runtime.perception_port.start_pump()
+        managed_port = True
+
+    try:
+        while True:
+            if stop_event is not None and stop_event.is_set():
+                return _finish_run(
+                    LabRunStatus.STOP_EVENT_SET,
+                    cycles_completed,
+                    failures,
+                    start_time,
+                    runtime,
+                    reason="stop_event_set",
+                )
+
+            if cycles_completed >= max_c:
+                return _finish_run(
+                    LabRunStatus.MAX_CYCLES_REACHED,
+                    cycles_completed,
+                    failures,
+                    start_time,
+                    runtime,
+                    reason="max_cycles_reached",
+                )
+
+            if consecutive_failures >= max_fails:
+                return _finish_run(
+                    LabRunStatus.MAX_FAILURES_REACHED,
+                    cycles_completed,
+                    failures,
+                    start_time,
+                    runtime,
+                    reason="max_consecutive_failures_reached",
+                )
+
+            try:
+                prev_goal, cached_vendor, failed, last_summary = await _run_cycle(
+                    runtime, prev_goal, cached_vendor, cycles_completed, last_summary
+                )
+            except asyncio.CancelledError:
+                return _finish_run(
+                    LabRunStatus.STOP_EVENT_SET,
+                    cycles_completed,
+                    failures,
+                    start_time,
+                    runtime,
+                    reason="cancelled",
+                )
+            except Exception as exc:  # noqa: BLE001
+                return _finish_run(
+                    LabRunStatus.RUNTIME_ERROR,
+                    cycles_completed,
+                    failures,
+                    start_time,
+                    runtime,
+                    reason=f"{type(exc).__name__}:{exc}",
+                )
+
+            cycles_completed += 1
+            if failed:
+                failures += 1
+                consecutive_failures += 1
+            else:
+                consecutive_failures = 0
+
+            # Health check
+            try:
+                state = runtime.game_state_source()
+            except asyncio.CancelledError:
+                return _finish_run(
+                    LabRunStatus.STOP_EVENT_SET,
+                    cycles_completed,
+                    failures,
+                    start_time,
+                    runtime,
+                    reason="cancelled",
+                )
+            except Exception as exc:  # noqa: BLE001
+                return _finish_run(
+                    LabRunStatus.RUNTIME_ERROR,
+                    cycles_completed,
+                    failures,
+                    start_time,
+                    runtime,
+                    reason=f"{type(exc).__name__}:{exc}",
+                )
+
+            pos = _extract_position(state)
+            sample = ProgressSample(
+                ts=runtime.clock(),
+                position=pos,
+                inventory_count=getattr(state, "inventory_count", 0),
+                level_or_xp=float(getattr(state, "level", getattr(state, "xp", 0.0))),
+                successful_actions_total=cycles_completed * 10,
+                reflex_ticks_total=cycles_completed * 20,
             )
-        except Exception as exc:  # noqa: BLE001
-            return _finish_run(
-                LabRunStatus.RUNTIME_ERROR,
-                cycles_completed,
-                failures,
-                start_time,
-                runtime,
-                reason=f"{type(exc).__name__}:{exc}",
+            runtime.progress.update(sample)
+            snapshot = runtime.progress.snapshot()
+            runtime.health.observe(snapshot, now=runtime.clock())
+
+            if runtime.health.current_state == HealthState.CRITICAL:
+                report = runtime.shutdown.run(ShutdownReason.HEALTH_CRITICAL)
+                return _finish_run(
+                    LabRunStatus.HEALTH_CRITICAL,
+                    cycles_completed,
+                    failures,
+                    start_time,
+                    runtime,
+                    reason="health_critical",
+                    shutdown_report=report,
+                )
+
+            # Loop detector check
+            observation = ActionObservation(
+                ts=runtime.clock(),
+                signature=f"cycle_{cycles_completed}:{prev_goal}",
+                level_or_xp=float(getattr(state, "level", getattr(state, "xp", 0.0))),
             )
+            loop_res = runtime.loops.observe(observation)
+            if loop_res is not None and loop_res.detected:
+                report = runtime.shutdown.run(ShutdownReason.LOOP_DETECTED)
+                return _finish_run(
+                    LabRunStatus.LOOP_DETECTED,
+                    cycles_completed,
+                    failures,
+                    start_time,
+                    runtime,
+                    reason="loop_detected",
+                    shutdown_report=report,
+                )
 
-        cycles_completed += 1
-        if failed:
-            failures += 1
-            consecutive_failures += 1
-        else:
-            consecutive_failures = 0
+            if runtime.sleep is not None:
+                runtime.sleep(REFLEX_INTERVAL_S)
 
-        # Health check
-        state = runtime.game_state_source()
-        pos = _extract_position(state)
-        sample = ProgressSample(
-            ts=runtime.clock(),
-            position=pos,
-            inventory_count=getattr(state, "inventory_count", 0),
-            level_or_xp=float(getattr(state, "level", getattr(state, "xp", 0.0))),
-            successful_actions_total=cycles_completed * 10,
-            reflex_ticks_total=cycles_completed * 20,
-        )
-        runtime.progress.update(sample)
-        snapshot = runtime.progress.snapshot()
-        runtime.health.observe(snapshot, now=runtime.clock())
-
-        if runtime.health.current_state == HealthState.CRITICAL:
-            report = runtime.shutdown.run(ShutdownReason.HEALTH_CRITICAL)
-            return _finish_run(
-                LabRunStatus.HEALTH_CRITICAL,
-                cycles_completed,
-                failures,
-                start_time,
-                runtime,
-                reason="health_critical",
-                shutdown_report=report,
-            )
-
-        # Loop detector check
-        observation = ActionObservation(
-            ts=runtime.clock(),
-            signature=f"cycle_{cycles_completed}:{prev_goal}",
-            level_or_xp=float(getattr(state, "level", getattr(state, "xp", 0.0))),
-        )
-        loop_res = runtime.loops.observe(observation)
-        if loop_res is not None and loop_res.detected:
-            report = runtime.shutdown.run(ShutdownReason.LOOP_DETECTED)
-            return _finish_run(
-                LabRunStatus.LOOP_DETECTED,
-                cycles_completed,
-                failures,
-                start_time,
-                runtime,
-                reason="loop_detected",
-                shutdown_report=report,
-            )
-
-        if runtime.sleep is not None:
-            runtime.sleep(REFLEX_INTERVAL_S)
+            await asyncio.sleep(0)
+    finally:
+        if managed_port and runtime.perception_port is not None:
+            runtime.perception_port.stop_pump()
 
 
 def run_lab_loop(

@@ -118,4 +118,6 @@ log_level = "INFO"
 # durability_fraction = 0.6
 # target_is_lootable = 0.9
 # position = 0.6
+# T-FIX-20 snapshot staleness bound in milliseconds; snapshots older than this are rejected as stale
+# snapshot_staleness_ms = 500
 

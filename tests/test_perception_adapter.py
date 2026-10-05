@@ -10,7 +10,6 @@ from unittest.mock import patch
 import pytest
 
 from wow_bot.combat.flee import FleeStateView
-from wow_bot.combat.loop import CombatStateView
 from wow_bot.executor.states import FSMState
 from wow_bot.farm.vendor import VendorStateView
 from wow_bot.perception.adapter import (
@@ -22,11 +21,9 @@ from wow_bot.perception.adapter import (
 from wow_bot.perception.context import StaticRuntimeContext
 from wow_bot.perception.protocol import PerceptionBackend
 from wow_bot.perception.views import (
-    CombatView,
     FleeView,
     LootView,
     ReactiveView,
-    StrategistView,
     TargetView,
     VendorView,
     WorldSyncView,
@@ -299,6 +296,8 @@ def test_adapter_hp_mp_conversion() -> None:
     target = TargetInfo(name="Target", hp_pct=0.1245, reaction="hostile", distance_estimate=10.0)
     state = _make_well_formed_state(hp_pct=0.1255, mana_pct=0.9999, target=target)
     adapter = GameStateAdapter(state, config=AdapterDerivationConfig(engage_distance_units=30.0), context=StaticRuntimeContext())
+    rx = adapter.to_reactive_view()
+    assert rx.self_hp_percent == 12.6
 
 
 # ---------------------------------------------------------------------------
@@ -604,9 +603,9 @@ def test_projection_to_vendor_view_fails_loud_on_missing_inventory_count() -> No
 # 10. End-to-end Projection (T-FIX-04)
 # ---------------------------------------------------------------------------
 
-from wow_bot.perception.mock_backend import MockPerceptionBackend
 from wow_bot.mocks.mock_perception import MockPerception
-from wow_bot.perception.adapter import AdapterDerivationConfig
+from wow_bot.perception.mock_backend import MockPerceptionBackend
+
 
 @pytest.mark.asyncio
 async def test_end_to_end_projection_from_mock() -> None:
@@ -665,7 +664,8 @@ async def test_end_to_end_projection_from_mock() -> None:
 
 @pytest.mark.asyncio
 async def test_mock_scenario_dead_target() -> None:
-    mock = MockPerception(scenario="dead_target_scenario")
+    mock = MockPerception(combat_on_duration=10.0, max_enemies=1)
+    mock._scenario = "dead_target_scenario"
     backend = MockPerceptionBackend(mock)
     for _ in range(200):
         snapshot = await backend.snapshot()
