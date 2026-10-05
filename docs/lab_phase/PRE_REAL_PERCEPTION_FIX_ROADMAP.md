@@ -113,7 +113,7 @@ Tier names are unchanged from the original revision of this document.
 | 1b | T-FIX-24 | Per-view projection expectations (xfail split) | DONE |
 | 1b | T-FIX-22 | perception_confidence plumbing and thresholding | DONE |
 | 1c — Perception → runtime bridge | T-FIX-20 | Async perception port and loop scheduling | DONE |
-| 2 — Execution Path (تیک → اکشن) | T-FIX-05 | FSM IDLE→SCANNING progression | PENDING |
+| 2 — Execution Path (تیک → اکشن) | T-FIX-05 | FSM IDLE→SCANNING progression | DONE |
 | 2 | T-FIX-06 | Reflex/Watchdog lifecycle | PENDING |
 | 2 | T-FIX-07 | Safety lifecycle wiring | PENDING |
 | 2 | T-FIX-08 | Gameplay primitives (cast/loot/vendor/jump) | PENDING |
@@ -684,7 +684,7 @@ precisely the merge the whole roadmap exists to enable.
 
 ## T-FIX-05 — FSM IDLE→SCANNING progression
 
-**Status:** PENDING
+**Status:** DONE
 **Depends on:** T-FIX-04
 **Evidence:** the archived soak reached no action intent. `_CompositeBehavior.decide`
 handles only recovery, combat, and looting, returning `None` for `IDLE`
@@ -710,12 +710,12 @@ runtime FSM state (`strategist/orchestrator_v2.py:266`).
 - No global RNG; the FSM stays deterministic given identical inputs.
 
 **Acceptance:**
-- [ ] Test: a cycle progresses `IDLE → SCANNING` and reaches a subsequent
+- [x] Test: a cycle progresses `IDLE → SCANNING` and reaches a subsequent
       state, emitting at least one intent.
-- [ ] Test: an illegal transition still raises.
-- [ ] Test: the value the strategist sees for `fsm_state` tracks the
+- [x] Test: an illegal transition still raises.
+- [x] Test: the value the strategist sees for `fsm_state` tracks the
       runtime FSM state.
-- [ ] Test: the pre-existing "constructs but does not advance" runner test
+- [x] Test: the pre-existing "constructs but does not advance" runner test
       is updated to assert the new, real progression rather than being
       deleted.
 

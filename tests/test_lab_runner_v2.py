@@ -489,6 +489,7 @@ def test_composite_behavior_dispatch() -> None:
     """Verify _CompositeBehavior dispatch order across FSM states."""
     import random
 
+    from wow_bot.actuation.mapper import MoveTo, Turn
     from wow_bot.combat.loop import CombatLoop, CombatLoopConfig
     from wow_bot.combat.rotation import RotationConfig, RotationTable
     from wow_bot.combat.targeting import TargetConfig, TargetSelector
@@ -527,9 +528,14 @@ def test_composite_behavior_dispatch() -> None:
     res_loot = comp.decide(FSMState.LOOTING, state, meta, 1.0, rng)
     assert res_loot is None  # no target returns None
 
-    # IDLE
+    # IDLE and SCANNING advance to target selection / scan intent
     res_idle = comp.decide(FSMState.IDLE, state, meta, 1.0, rng)
-    assert res_idle is None
+    assert res_idle is not None
+    assert isinstance(res_idle, (Turn, MoveTo))
+
+    res_scan = comp.decide(FSMState.SCANNING, state, meta, 1.0, rng)
+    assert res_scan is not None
+    assert isinstance(res_scan, (Turn, MoveTo))
 
 
 def test_null_llm_client_raises() -> None:

@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Protocol
 
+from wow_bot.executor.states import FSMState
 from wow_bot.strategist.cooldown_v2 import CooldownDecision, CooldownGate
 from wow_bot.strategist.prompts_v2 import (
     GameStateView,
@@ -207,6 +208,17 @@ def parse_strategy_json(raw: str) -> JsonStrategy | None:
         return None
 
 
+class _StateWithFsmState:
+    """Delegating wrapper providing or overriding fsm_state on a game state view."""
+
+    def __init__(self, base: Any, fsm_state: FSMState) -> None:
+        self._base = base
+        self.fsm_state = fsm_state
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._base, name)
+
+
 class OrchestratorV2:
     """Ties prompt building, cooldown gating, local LLM call, parsing, and vocab validation into one decision."""
 
@@ -247,8 +259,18 @@ class OrchestratorV2:
         world: WorldSummary,
         state: GameStateView,
         now: float,
+        fsm_state: FSMState | None = None,
     ) -> OrchestratorResult:
         """Evaluate strategist decision cycle for current state and world context."""
+        effective_fsm_state: FSMState = (
+            fsm_state if fsm_state is not None else getattr(state, "fsm_state", FSMState.IDLE)
+        )
+        effective_state: GameStateView = (
+            _StateWithFsmState(state, effective_fsm_state)
+            if (fsm_state is not None or not hasattr(state, "fsm_state"))
+            else state
+        )
+
         # 1. Check enabled flag
         if not self._enabled:
             result = OrchestratorResult(
@@ -263,7 +285,7 @@ class OrchestratorV2:
             return result
 
         # 2. Cooldown check
-        check = self._cooldown.check(state.fsm_state, now=now)
+        check = self._cooldown.check(effective_fsm_state, now=now)
         if check.decision not in (CooldownDecision.ALLOWED, CooldownDecision.FORCED_ALLOWED):
             result = OrchestratorResult(
                 outcome=OrchestratorOutcome.BLOCKED_BY_COOLDOWN,
@@ -278,7 +300,7 @@ class OrchestratorV2:
 
         # 3. Prompt build
         try:
-            bundle = build_prompt(meta, world, state)
+            bundle = build_prompt(meta, world, effective_state)
         except Exception as exc:  # noqa: BLE001
             if self._session is not None:
                 self._session.write_event({

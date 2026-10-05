@@ -263,6 +263,26 @@ After T-FIX-20 merges, this exception is closed. Any future edit to a
 module that STRATEGY A treats as FROZEN requires its own explicit
 exception recorded in this file.
 
+### 5.9 Bounded exception: T-FIX-05 FSM IDLE->SCANNING progression
+
+The task T-FIX-05 authorizes a single, bounded exception to STRATEGY A.
+Its sole purpose is to implement the FSM `IDLE -> SCANNING` progression in
+`src/wow_bot/executor/fsm_v2.py`, add scanning / target-selection behavior
+to `_CompositeBehavior` in `src/wow_bot/lab/runner_v2.py`, and thread runtime
+FSM state from the runner to the strategist in
+`src/wow_bot/strategist/orchestrator_v2.py`. This is the only file scope of this
+exception in frozen pre-lab modules: `src/wow_bot/executor/fsm_v2.py`,
+`src/wow_bot/lab/runner_v2.py`, and `src/wow_bot/strategist/orchestrator_v2.py`.
+
+It does NOT authorize renaming or removing any existing parameter or field,
+modifying `SafetyLayer`, `Session`, or `Config`, modifying `GameState` schema,
+changing consumer Protocols, changing the transition table definitions in
+`executor/states.py`, or changing any Phase 12 artifact.
+
+After T-FIX-05 merges, this exception is closed. Any future edit to a
+module that STRATEGY A treats as FROZEN requires its own explicit
+exception recorded in this file.
+
 ### 5.2 Source of Tasks
 
 Tasks are defined exclusively in `LAB_PHASE_ROADMAP.md`. Do not invent

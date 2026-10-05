@@ -20,6 +20,7 @@ Sync Policy for Async Operations:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import math
 import random
 import time
@@ -33,7 +34,7 @@ from wow_bot.actuation.backends.focus_null import NullFocusBackend
 from wow_bot.actuation.driver import make_driver
 from wow_bot.actuation.focus import FocusManager
 from wow_bot.actuation.humanized import HumanizedActuator, HumanizerConfig
-from wow_bot.actuation.mapper import ActionMapper, ActionStatus, RealDelay
+from wow_bot.actuation.mapper import ActionMapper, ActionStatus, Intent, MoveTo, RealDelay, Turn
 from wow_bot.combat.flee import FleeConfig, FleeController
 from wow_bot.combat.loop import CombatLoop, CombatLoopConfig
 from wow_bot.combat.reactive import (
@@ -294,8 +295,62 @@ class _NullLlmClient:
         raise LabRunnerError("No LlmClient provided to runner")
 
 
+class _ScanningBehavior(Behavior):
+    """Behavior implementation for scanning and target selection."""
+
+    def __init__(self, targeting: TargetSelector | None = None) -> None:
+        self.targeting = targeting
+
+    def decide(
+        self,
+        state: FSMState,
+        game_state: GameStateLike,
+        meta_state: MetaStateLike,
+        now: float,
+        rng: random.Random,
+    ) -> Intent | None:
+        # 1. Target present in game_state
+        target = getattr(game_state, "target", None)
+        if target is not None:
+            tx = getattr(target, "x", None)
+            ty = getattr(target, "y", None)
+            if tx is not None and ty is not None:
+                return MoveTo(x=float(tx), y=float(ty))
+
+        target_x = getattr(game_state, "target_x", None)
+        target_y = getattr(game_state, "target_y", None)
+        if target_x is not None and target_y is not None:
+            return MoveTo(x=float(target_x), y=float(target_y))
+
+        # 2. Check entities list
+        entities = getattr(game_state, "entities", ())
+        if entities:
+            if self.targeting is not None and hasattr(game_state, "current_target_id"):
+                with contextlib.suppress(Exception):
+                    decision = self.targeting.select(game_state)  # type: ignore[arg-type]
+                    if decision.entity_id is not None:
+                        for ent in entities:
+                            if getattr(ent, "entity_id", None) == decision.entity_id:
+                                ex = getattr(ent, "x", None)
+                                ey = getattr(ent, "y", None)
+                                if ex is not None and ey is not None:
+                                    return MoveTo(x=float(ex), y=float(ey))
+
+            for ent in entities:
+                ex = getattr(ent, "x", None)
+                ey = getattr(ent, "y", None)
+                if ex is not None and ey is not None:
+                    return MoveTo(x=float(ex), y=float(ey))
+
+        if state == FSMState.MOVING_TO_TARGET:
+            return MoveTo(x=0.0, y=0.0)
+
+        angle = round(rng.uniform(0.2, 0.8), 4)
+        return Turn(angle_rad=angle)
+
+
 class _CompositeBehavior(Behavior):
-    """Behavior implementation dispatching decisions to recovery, combat, or loot behaviors."""
+    """Behavior implementation dispatching decisions to recovery, combat, loot, or scanning behaviors."""
 
     def __init__(
         self,
@@ -303,10 +358,18 @@ class _CompositeBehavior(Behavior):
         recovery_behavior: RecoveryBehavior,
         combat_loop: CombatLoop,
         loot_controller: LootController,
+        targeting: TargetSelector | None = None,
+        scanning_behavior: Behavior | None = None,
     ) -> None:
         self.recovery_behavior = recovery_behavior
         self.combat_loop = combat_loop
         self.loot_controller = loot_controller
+        self.targeting = targeting
+        self.scanning_behavior = (
+            scanning_behavior
+            if scanning_behavior is not None
+            else _ScanningBehavior(targeting=targeting)
+        )
 
     def decide(
         self,
@@ -323,6 +386,13 @@ class _CompositeBehavior(Behavior):
             return self.combat_loop.decide(state, game_state, meta_state, now, rng)  # type: ignore[arg-type]
         if state == FSMState.LOOTING:
             return self.loot_controller.decide(state, game_state, meta_state, now, rng)
+        if state in (
+            FSMState.SCANNING,
+            FSMState.IDLE,
+            FSMState.MOVING_TO_TARGET,
+            FSMState.TARGETING,
+        ):
+            return self.scanning_behavior.decide(state, game_state, meta_state, now, rng)
         return None
 
 
@@ -590,6 +660,7 @@ async def build_lab_runtime_async(
         recovery_behavior=recovery_behavior,
         combat_loop=combat_loop,
         loot_controller=loot_controller,
+        targeting=targeting,
     )
     fsm = FSM(
         config=FSMConfig(seed=rng_seed),
@@ -846,6 +917,7 @@ async def _run_cycle(
             world=world_summary,
             state=state,  # type: ignore[arg-type]
             now=runtime.clock(),
+            fsm_state=runtime.fsm.current_state,
         )
         if outcome.outcome == OrchestratorOutcome.SUCCESS and outcome.strategy is not None:
             new_goal = outcome.strategy.goal

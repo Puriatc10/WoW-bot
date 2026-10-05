@@ -21,7 +21,7 @@ from wow_bot.executor.fsm_v2 import (
     MetaStateLike,
     NullBehavior,
 )
-from wow_bot.executor.states import FSMState
+from wow_bot.executor.states import FSMState, timeout_for
 from wow_bot.session import Session
 
 
@@ -138,7 +138,7 @@ def test_tick_fake_behavior_returns_moveto(tmp_path: Path) -> None:
     events = _read_session_events(session)
     intent_events = [e for e in events if e.get("event") == "fsm_intent"]
     assert len(intent_events) == 1
-    assert intent_events[0]["state"] == FSMState.IDLE.value
+    assert intent_events[0]["state"] == FSMState.MOVING_TO_TARGET.value
     assert intent_events[0]["intent"] == repr(intent)
 
 
@@ -207,12 +207,17 @@ def test_state_timeout(tmp_path: Path) -> None:
 def test_idle_no_timeout() -> None:
     """IDLE has timeout_s None and never auto-transitions via timeout."""
     fsm = FSM()
+    assert timeout_for(FSMState.IDLE) is None
+    assert fsm.current_state == FSMState.IDLE
+
     game_state = DummyGameState()
     meta_state = DummyMetaState()
 
+    # Tick advances IDLE -> SCANNING
     fsm.tick(game_state, meta_state, now=100.0)
-    assert fsm.current_state == FSMState.IDLE
+    assert fsm.current_state == FSMState.SCANNING
 
+    # After SCANNING timeout (30s), tick times out back to IDLE
     fsm.tick(game_state, meta_state, now=100100.0)
     assert fsm.current_state == FSMState.IDLE
 
@@ -603,7 +608,7 @@ def test_lock_not_held_across_decide() -> None:
     meta_state = DummyMetaState()
 
     fsm.tick(game_state, meta_state, now=100.0)
-    assert behavior.queried_state == FSMState.IDLE
+    assert behavior.queried_state == FSMState.SCANNING
 
 
 def test_session_events_payload_schema(tmp_path: Path) -> None:

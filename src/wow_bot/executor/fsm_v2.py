@@ -13,6 +13,7 @@ from wow_bot.actuation.mapper import Intent, MoveTo, Turn
 from wow_bot.executor.feedback import Feedback, FeedbackDecision, FeedbackOutcome, decide
 from wow_bot.executor.states import (
     FSMState,
+    TransitionError,
     assert_transition,
     can_transition,
     timeout_for,
@@ -172,6 +173,7 @@ class FSM:
     ) -> Intent | None:
         """Execute one tick step of the FSM loop."""
         timeout_event: tuple[str, str] | None = None
+        transition_events: list[tuple[str, str, str]] = []
 
         with self._lock:
             if self._state_entered_at is None:
@@ -191,6 +193,14 @@ class FSM:
                 self._stuck_attempts = 0
                 current_state = FSMState.IDLE
                 timeout_event = (old_state.value, f"state_timeout:{old_state.value}")
+            elif current_state == FSMState.IDLE:
+                assert_transition(FSMState.IDLE, FSMState.SCANNING)
+                old_state = current_state
+                self._previous_state = old_state
+                self._state = FSMState.SCANNING
+                self._state_entered_at = now
+                current_state = FSMState.SCANNING
+                transition_events.append((old_state.value, FSMState.SCANNING.value, "idle_to_scanning"))
 
             seed_bits = self._rng.getrandbits(64)
 
@@ -205,6 +215,16 @@ class FSM:
                 },
             )
 
+        for from_val, to_val, reason_val in transition_events:
+            self._emit_event(
+                "fsm_transition",
+                {
+                    "from": from_val,
+                    "to": to_val,
+                    "reason": reason_val,
+                },
+            )
+
         tick_rng = random.Random(seed_bits)
         intent = self._behavior.decide(
             current_state,
@@ -214,16 +234,80 @@ class FSM:
             tick_rng,
         )
 
+        post_transition: tuple[str, str, str] | None = None
+        if current_state == FSMState.SCANNING and intent is not None:
+            subsequent_state = (
+                FSMState.MOVING_TO_TARGET if isinstance(intent, MoveTo) else FSMState.TARGETING
+            )
+            with self._lock:
+                if self._state == FSMState.SCANNING:
+                    assert_transition(FSMState.SCANNING, subsequent_state)
+                    old_state = self._state
+                    self._previous_state = old_state
+                    self._state = subsequent_state
+                    self._state_entered_at = now
+                    post_transition = (old_state.value, subsequent_state.value, "target_selected")
+
+        if post_transition is not None:
+            from_v, to_v, r_v = post_transition
+            self._emit_event(
+                "fsm_transition",
+                {
+                    "from": from_v,
+                    "to": to_v,
+                    "reason": r_v,
+                },
+            )
+
         if intent is not None:
             self._emit_event(
                 "fsm_intent",
                 {
-                    "state": current_state.value,
+                    "state": self.current_state.value,
                     "intent": repr(intent),
                 },
             )
 
         return intent
+
+    def transition_to(
+        self,
+        target: FSMState,
+        reason: str = "",
+        *,
+        now: float,
+    ) -> None:
+        """Explicitly transition FSM to target state if permitted by transition table."""
+        with self._lock:
+            if self._state_entered_at is None:
+                self._state_entered_at = now
+
+            if self._state == FSMState.PAUSED and target != FSMState.PAUSED:
+                raise TransitionError(f"Cannot transition while PAUSED to {target.value}")
+
+            assert_transition(self._state, target)
+
+            old_state = self._state
+            self._previous_state = old_state
+            self._state = target
+            self._state_entered_at = now
+
+            if target == FSMState.STUCK_RECOVERY:
+                self._stuck_attempts += 1
+            else:
+                self._stuck_attempts = 0
+
+            transition_event = (old_state.value, target.value, reason)
+
+        from_val, to_val, reason_val = transition_event
+        self._emit_event(
+            "fsm_transition",
+            {
+                "from": from_val,
+                "to": to_val,
+                "reason": reason_val,
+            },
+        )
 
     def submit_feedback(
         self,
