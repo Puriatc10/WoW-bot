@@ -56,6 +56,11 @@ from wow_bot.perception.combat import CombatDetector
 from wow_bot.perception.enemies import EnemyDetection, EnemyDetector
 from wow_bot.perception.events import EventCandidate, EventDetector
 from wow_bot.perception.minimap import MinimapTracker
+from wow_bot.perception.panels import (
+    PanelObservations,
+    PanelReaders,
+    observe_panels,
+)
 from wow_bot.perception.target import TargetReader
 from wow_bot.shared.interfaces import (
     REACTIONS,
@@ -219,6 +224,7 @@ class RealStateBuilder:
         tesseract_cmd: str | None = None,
         kind_map: Mapping[str, str] | None = None,
         entity_distance: EntityDistance | None = None,
+        panel_readers: PanelReaders | None = None,
     ) -> None:
         self._bars = bars
         self._combat = combat
@@ -230,12 +236,14 @@ class RealStateBuilder:
         self._tesseract_cmd = tesseract_cmd
         self._kind_map = kind_map
         self._entity_distance = entity_distance
+        self._panel_readers = panel_readers
 
     def build(
         self,
         frame: FrameLike,
         *,
         injected: InjectedObservations,
+        panels: PanelObservations | None = None,
         now: float | None = None,
     ) -> GameState:
         """Compose ``frame`` into a canonical ``GameState``.
@@ -292,6 +300,44 @@ class RealStateBuilder:
         for key, value in injected.confidence.items():
             confidence.setdefault(key, float(value))
 
+        observed_panels: PanelObservations | None = panels
+        if observed_panels is None and self._panel_readers is not None:
+            caster_id = (
+                target_info.name
+                if (target_info is not None and target_info.name is not None)
+                else "target"
+            )
+            observed_panels = observe_panels(
+                frame,
+                readers=self._panel_readers,
+                now=timestamp,
+                tesseract_cmd=self._tesseract_cmd,
+                caster_entity_id=caster_id,
+            )
+
+        inv_count = (
+            observed_panels.inventory_count if observed_panels is not None else None
+        )
+        inv_max = (
+            observed_panels.inventory_max if observed_panels is not None else None
+        )
+        lvl_xp = (
+            observed_panels.level_or_xp if observed_panels is not None else None
+        )
+        durability = (
+            observed_panels.durability_fraction if observed_panels is not None else None
+        )
+        lootable = (
+            observed_panels.target_is_lootable if observed_panels is not None else None
+        )
+        casts = (
+            observed_panels.incoming_casts if observed_panels is not None else ()
+        )
+
+        if observed_panels is not None:
+            for key, value in observed_panels.confidence.items():
+                confidence.setdefault(key, float(value))
+
         return GameState(
             timestamp=timestamp,
             hp_pct=bar_reading.hp,
@@ -309,12 +355,12 @@ class RealStateBuilder:
             # detections in both the legacy and canonical slots.
             entities=tuple(entity_infos),
             perception_confidence=confidence,
-            inventory_count=None,  # channel-pending: "Bag frame" (T-FIX-31)
-            inventory_max=None,  # channel-pending: "Bag frame" (T-FIX-31)
-            level_or_xp=None,  # channel-pending: "XP bar" (T-FIX-31)
-            durability_fraction=None,  # channel-pending: "Character frame"
-            target_is_lootable=None,  # channel-pending: "Lootable-corpse"
-            incoming_casts=(),  # channel-pending: honest "no casts observed"
+            inventory_count=inv_count,
+            inventory_max=inv_max,
+            level_or_xp=lvl_xp,
+            durability_fraction=durability,
+            target_is_lootable=lootable,
+            incoming_casts=casts,
         )
 
     def _build_entities(

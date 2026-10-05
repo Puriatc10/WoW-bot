@@ -60,6 +60,12 @@ from wow_bot.perception.port import (
     PerceptionStaleError,
 )
 from wow_bot.perception.protocol import PerceptionBackend
+from wow_bot.perception.real_backend import (
+    FrameMissingError,
+    FrameStaleError,
+    RealPerceptionBackend,
+    RealPerceptionError,
+)
 from wow_bot.perception.resource_table import EMPTY_RESOURCE_TABLE, ResourceTable
 from wow_bot.perception.views import (
     CombatView,
@@ -95,6 +101,8 @@ __all__ = [
     "EnemyCastView",
     "FSMState",
     "FleeView",
+    "FrameMissingError",
+    "FrameStaleError",
     "GameStateAdapter",
     "LootSparkleReader",
     "LootSparkleReading",
@@ -110,6 +118,8 @@ __all__ = [
     "PerceptionPortError",
     "PerceptionStaleError",
     "ReactiveView",
+    "RealPerceptionBackend",
+    "RealPerceptionError",
     "ResourceTable",
     "RuntimeContext",
     "StaticRuntimeContext",

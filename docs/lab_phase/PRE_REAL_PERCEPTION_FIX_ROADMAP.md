@@ -135,7 +135,7 @@ Tier names are unchanged from the original revision of this document.
 | 8 | T-FIX-28 | Real state builder → canonical `GameState` | DONE |
 | 8 | T-FIX-30 | World pose, target distance, reaction channels | DONE |
 | 8 | T-FIX-31 | UI panel channels (implements T-FIX-23) | DONE |
-| 8 | T-FIX-32 | `RealPerceptionBackend`, gated | PROPOSED |
+| 8 | T-FIX-32 | `RealPerceptionBackend`, gated | DONE |
 
 ### Dependency graph
 
@@ -1782,7 +1782,7 @@ silently suppresses full-bag handling.
 
 ## T-FIX-32 — `RealPerceptionBackend`, behind a config gate
 
-**Status:** PENDING (proposed)
+**Status:** DONE
 **Depends on:** T-FIX-28, T-FIX-31 (for the five panel fields), T-FIX-04,
 T-FIX-20, T-FIX-22
 **Deliverables:**
@@ -1799,11 +1799,26 @@ T-FIX-20, T-FIX-22
 - The fast loop is not blocked; T-FIX-20 owns scheduling.
 
 **Acceptance:**
-- [ ] `isinstance(RealPerceptionBackend(...), PerceptionBackend)` holds.
-- [ ] End-to-end integration test asserts the eight projection outcomes.
-- [ ] `MockPerception` is still the producer in both modes; no default config
+- [x] `isinstance(RealPerceptionBackend(...), PerceptionBackend)` holds.
+- [x] End-to-end integration test asserts the eight projection outcomes.
+- [x] `MockPerception` is still the producer in both modes; no default config
       selects the real backend.
-- [ ] Full suite green; `ruff` and `mypy` clean.
+- [x] Full suite green; `ruff` and `mypy` clean.
+
+**Implementation notes / decisions:**
+- `RealPerceptionBackend` implements `PerceptionBackend`, composing frame
+  acquisition (`ScreenCapture` or callable frame source), candidate target
+  reading, T-FIX-30 channel observations (pose, reaction, distance), T-FIX-31
+  UI panel observations (bag, XP, durability, casting, loot), and
+  `RealStateBuilder` into a canonical `GameState`.
+- Missing frames raise `FrameMissingError` loudly; frames older than
+  `max_frame_age_s` or pose samples older than `max_pose_age_s` raise
+  `FrameStaleError`. Stale states or frames are never silently reused.
+- Gated: `MockPerception` remains the configured producer in both `MOCK_MODE`
+  and `LAB_MODE`. No default config selects the real backend.
+- End-to-end integration test in `tests/test_real_perception_backend.py` runs
+  over frozen frame corpus under `tests/fixtures/corpus/` and asserts all
+  eight projection outcomes and fail-loud gating rules.
 
 **Out of scope:** enabling it. That is Phase 13, and requires amending
 `LAB_PHASE_ROADMAP.md` Global Rule 1 first — an operator decision recorded in

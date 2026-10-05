@@ -613,7 +613,7 @@ full-bag handling).
 #### T-FIX-32 — `RealPerceptionBackend` behind a config gate
 
 **Depends on:** T-FIX-28, T-FIX-04, T-FIX-20, T-FIX-22
-**Status:** PENDING (proposed)
+**Status:** DONE
 **Deliverables:**
 - `src/wow_bot/perception/real_backend.py` — `RealPerceptionBackend(
   PerceptionBackend)` composing capture → readers → builder, exposing
@@ -629,12 +629,12 @@ full-bag handling).
 - The fast loop is not blocked — the T-FIX-20 port owns scheduling.
 
 **Acceptance:**
-- [ ] `RealPerceptionBackend` satisfies `isinstance(..., PerceptionBackend)`.
-- [ ] An integration test feeds recorded/synthetic frames end to end and
+- [x] `RealPerceptionBackend` satisfies `isinstance(..., PerceptionBackend)`.
+- [x] An integration test feeds recorded/synthetic frames end to end and
       asserts the eight projection outcomes.
-- [ ] `MockPerception` is still the producer in both modes; no default config
+- [x] `MockPerception` is still the producer in both modes; no default config
       selects the real backend.
-- [ ] Full suite green; `ruff` and `mypy` clean.
+- [x] Full suite green; `ruff` and `mypy` clean.
 
 **Out of scope:** enabling it — that is Phase 13, and requires amending
 `LAB_PHASE_ROADMAP.md` Global Rule 1 first (§6.1).
