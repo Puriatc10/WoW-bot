@@ -85,7 +85,7 @@ from wow_bot.watchdog.health import HealthConfig, HealthState, HealthStateMachin
 from wow_bot.watchdog.loops import ActionObservation, LoopConfig, LoopDetector
 from wow_bot.watchdog.metrics import MetricsConfig, ProgressSample, ProgressTracker
 from wow_bot.watchdog.shutdown import GracefulShutdown, ShutdownConfig, ShutdownReason
-from wow_bot.watchdog.watchdog import WatchdogProcess
+from wow_bot.watchdog.watchdog import HeartbeatMessage, WatchdogProcess
 from wow_bot.world.loader import LoaderConfig, LoaderError, load_world
 from wow_bot.world.store import WorldModel
 from wow_bot.world.summary import SummaryConfig, WorldSummary, summarize
@@ -222,6 +222,17 @@ class LabRuntime:
     telemetry_config: TelemetryConfig
     session_events_total: int
     perception_port: PerceptionPort | None = None
+
+    async def close(self) -> None:
+        """Close and reap all managed runtime resources."""
+        if self.perception_port is not None:
+            self.perception_port.stop_pump()
+        if self.reflex_loop is not None and self.reflex_loop.is_running():
+            self.reflex_loop.stop(timeout_s=1.0)
+        if self.watchdog is not None:
+            self.watchdog.close()
+        if hasattr(self.world, "close"):
+            await self.world.close()
 
 
 @dataclass(frozen=True)
@@ -406,6 +417,21 @@ class _TelemetryClockAdapter:
         return self._clock_fn()
 
 
+class _MockReflexClock:
+    """Reflex clock for mock/test runs advancing simulated time and yielding to prevent thread spin."""
+
+    def __init__(self, initial_time: float = 0.0) -> None:
+        self._time = initial_time
+
+    def now(self) -> float:
+        return self._time
+
+    def sleep(self, seconds: float) -> None:
+        if seconds > 0:
+            self._time += seconds
+            time.sleep(seconds)
+
+
 def _extract_position(state: object) -> tuple[float, float]:
     """Extract (x, y) coordinates from a game state object."""
     # Attribute names are static; existence is probed with hasattr and accessed
@@ -535,6 +561,8 @@ async def build_lab_runtime_async(
     rng_seed: int = 0,
     include_reflex_loop: bool = True,
     include_watchdog: bool = True,
+    reflex_loop: ReflexLoop | None = None,
+    watchdog: WatchdogProcess | None = None,
     focus_backend: object | None = None,
     llm_client: object | None = None,
 ) -> LabRuntime:
@@ -723,8 +751,10 @@ async def build_lab_runtime_async(
         config=telemetry_config,
     )
 
-    reflex_loop: ReflexLoop | None = None
-    if include_reflex_loop:
+    actual_reflex_loop: ReflexLoop | None = None
+    if reflex_loop is not None:
+        actual_reflex_loop = reflex_loop
+    elif include_reflex_loop:
         start_t = clk()
         max_sess_s = float(getattr(config, "max_session_seconds", 3600.0))
         focus_src = FocusSignalSource(focus)
@@ -740,8 +770,10 @@ async def build_lab_runtime_async(
         fsm_sink = FSMSink(bridge)
         recovery_sink = RecoverySink(bridge)
 
-        reflex_clk = RealClock() if clk is time.monotonic else NullClock()
-        reflex_loop = ReflexLoop(
+        reflex_clk = (
+            RealClock() if clk is time.monotonic else _MockReflexClock(initial_time=clk())
+        )
+        actual_reflex_loop = ReflexLoop(
             rate_hz=20.0,
             sources=(focus_src, safety_src, timeout_src, stuck_src, reactive_src),
             sinks=(abort_sink, fsm_sink, recovery_sink),
@@ -751,9 +783,17 @@ async def build_lab_runtime_async(
             session=session,
         )
 
-    watchdog: WatchdogProcess | None = None
-    if include_watchdog:
-        watchdog = WatchdogProcess()
+    actual_watchdog: WatchdogProcess | None = None
+    if watchdog is not None:
+        actual_watchdog = watchdog
+    elif include_watchdog:
+        actual_watchdog = WatchdogProcess()
+
+    if actual_watchdog is not None:
+        def _on_watchdog_shutdown_request(reason: ShutdownReason) -> None:
+            shutdown.run(reason)
+
+        actual_watchdog.on_shutdown_request(_on_watchdog_shutdown_request)
 
     config_snapshot = {
         "mode": "LAB",
@@ -794,11 +834,11 @@ async def build_lab_runtime_async(
         reactive_combat=reactive_combat,
         flee=flee,
         fsm=fsm,
-        reflex_loop=reflex_loop,
+        reflex_loop=actual_reflex_loop,
         orchestrator=orchestrator,
         cooldown=cooldown,
         guard=guard,
-        watchdog=watchdog,
+        watchdog=actual_watchdog,
         health=health,
         progress=progress,
         loops=loops,
@@ -833,6 +873,8 @@ def build_lab_runtime(
     rng_seed: int = 0,
     include_reflex_loop: bool = True,
     include_watchdog: bool = True,
+    reflex_loop: ReflexLoop | None = None,
+    watchdog: WatchdogProcess | None = None,
     focus_backend: object | None = None,
     llm_client: object | None = None,
 ) -> LabRuntime:
@@ -868,6 +910,8 @@ def build_lab_runtime(
             rng_seed=rng_seed,
             include_reflex_loop=include_reflex_loop,
             include_watchdog=include_watchdog,
+            reflex_loop=reflex_loop,
+            watchdog=watchdog,
             focus_backend=focus_backend,
             llm_client=llm_client,
         )
@@ -1073,8 +1117,30 @@ async def run_lab_loop_async(
         runtime.perception_port.start_pump()
         managed_port = True
 
+    managed_reflex = False
+    if runtime.reflex_loop is not None and not runtime.reflex_loop.is_running():
+        runtime.reflex_loop.start()
+        managed_reflex = True
+
+    managed_watchdog = False
+    if runtime.watchdog is not None and not runtime.watchdog.is_alive:
+        runtime.watchdog.start()
+        managed_watchdog = True
+
     try:
         while True:
+            if runtime.watchdog is not None and runtime.watchdog.shutdown_event.is_set():
+                report = runtime.shutdown.run(ShutdownReason.HEALTH_CRITICAL)
+                return _finish_run(
+                    LabRunStatus.HEALTH_CRITICAL,
+                    cycles_completed,
+                    failures,
+                    start_time,
+                    runtime,
+                    reason="watchdog_shutdown_requested",
+                    shutdown_report=report,
+                )
+
             if stop_event is not None and stop_event.is_set():
                 return _finish_run(
                     LabRunStatus.STOP_EVENT_SET,
@@ -1157,14 +1223,31 @@ async def run_lab_loop_async(
                     reason=f"{type(exc).__name__}:{exc}",
                 )
 
+            # Watchdog heartbeat emission
+            if runtime.watchdog is not None and runtime.watchdog.is_alive:
+                hb = HeartbeatMessage(
+                    monotonic_sent_at=runtime.clock(),
+                    simulation_timestamp=runtime.clock(),
+                    fsm_state=runtime.fsm.current_state.value,
+                    progress_token=cycles_completed,
+                    recent_death_count=0,
+                )
+                with contextlib.suppress(Exception):
+                    runtime.watchdog.message_queue.put_nowait(hb)
+
             pos = _extract_position(state)
+            reflex_ticks = (
+                runtime.reflex_loop.tick_index
+                if runtime.reflex_loop is not None
+                else cycles_completed * 20
+            )
             sample = ProgressSample(
                 ts=runtime.clock(),
                 position=pos,
                 inventory_count=getattr(state, "inventory_count", 0),
                 level_or_xp=float(getattr(state, "level", getattr(state, "xp", 0.0))),
                 successful_actions_total=cycles_completed * 10,
-                reflex_ticks_total=cycles_completed * 20,
+                reflex_ticks_total=reflex_ticks,
             )
             runtime.progress.update(sample)
             snapshot = runtime.progress.snapshot()
@@ -1208,6 +1291,19 @@ async def run_lab_loop_async(
     finally:
         if managed_port and runtime.perception_port is not None:
             runtime.perception_port.stop_pump()
+        if (
+            managed_reflex
+            and runtime.reflex_loop is not None
+            and runtime.reflex_loop.is_running()
+        ):
+            runtime.reflex_loop.stop(timeout_s=1.0)
+        if managed_watchdog and runtime.watchdog is not None:
+            if runtime.watchdog.is_alive:
+                runtime.watchdog.stop()
+                runtime.watchdog.join(timeout=2.0)
+            mon_thread = getattr(runtime.watchdog, "_monitor_thread", None)
+            if mon_thread is not None and mon_thread.is_alive():
+                mon_thread.join(timeout=1.0)
 
 
 def run_lab_loop(

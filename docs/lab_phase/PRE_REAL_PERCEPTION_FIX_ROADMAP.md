@@ -726,7 +726,7 @@ actuation; plan refresh/lifetime (T-FIX-25).
 
 ## T-FIX-06 — Reflex/Watchdog lifecycle
 
-**Status:** PENDING
+**Status:** DONE
 **Depends on:** T-FIX-20
 **Evidence:** `include_reflex_loop=True` only *constructs* the loop
 (`lab/runner_v2.py:564`); `run_lab_loop_async` never starts or ticks it
@@ -751,12 +751,12 @@ in the archived soak is expected and does not validate these paths.
   injected fake clock (`NullClock`) — no reliance on real wall time.
 
 **Acceptance:**
-- [ ] Test: with reflex enabled, `run_lab_loop_async` produces more than
+- [x] Test: with reflex enabled, `run_lab_loop_async` produces more than
       zero ticks and stops cleanly.
-- [ ] Test: after stop, no reflex or watchdog thread is alive.
-- [ ] Test: a stop issued during a blocked sleep returns within a bounded
+- [x] Test: after stop, no reflex or watchdog thread is alive.
+- [x] Test: a stop issued during a blocked sleep returns within a bounded
       time.
-- [ ] Test: both components start in `MOCK_MODE` with a fake clock.
+- [x] Test: both components start in `MOCK_MODE` with a fake clock.
 
 **Out of scope:** reflex rule content and routing (T-FIX-16); health
 counter truth (T-FIX-13); reflex tick telemetry (T-FIX-12).

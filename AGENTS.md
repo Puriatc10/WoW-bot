@@ -283,6 +283,23 @@ After T-FIX-05 merges, this exception is closed. Any future edit to a
 module that STRATEGY A treats as FROZEN requires its own explicit
 exception recorded in this file.
 
+### 5.10 Bounded exception: T-FIX-06 Reflex/Watchdog lifecycle
+
+The task T-FIX-06 authorizes a single, bounded exception to STRATEGY A.
+Its sole purpose is to implement lifecycle ownership for the reflex loop and watchdog
+in `src/wow_bot/lab/runner_v2.py`: explicit startup on runner entry, heartbeat emission,
+watchdog shutdown handling, reflex tick tracking via `ReflexLoop.tick_index`, and clean
+deterministic shutdown/reap on loop termination. This is the only file scope of this
+exception in frozen pre-lab modules: `src/wow_bot/lab/runner_v2.py`.
+
+It does NOT authorize renaming or removing any existing parameter or field of `LabRuntime` or
+`LabRunnerConfig`, modifying `SafetyLayer`, `Session`, or `Config`, modifying `GameState`
+schema, changing consumer Protocols, or changing any Phase 12 artifact.
+
+After T-FIX-06 merges, this exception is closed. Any future edit to a
+module that STRATEGY A treats as FROZEN requires its own explicit
+exception recorded in this file.
+
 ### 5.2 Source of Tasks
 
 Tasks are defined exclusively in `LAB_PHASE_ROADMAP.md`. Do not invent
