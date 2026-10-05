@@ -117,7 +117,7 @@ Tier names are unchanged from the original revision of this document.
 | 2 | T-FIX-06 | Reflex/Watchdog lifecycle | DONE |
 | 2 | T-FIX-07 | Safety lifecycle wiring | DONE |
 | 2 | T-FIX-08 | Gameplay primitives (cast/loot/vendor/jump) | DONE |
-| 3 — Scientific Model | T-FIX-09 | Oscillator→drives coupling investigation | PENDING |
+| 3 — Scientific Model | T-FIX-09 | Oscillator→drives coupling investigation | DONE |
 | 3 | T-FIX-10 | Spectral acceptance resolution | PENDING |
 | 4 — Telemetry & Observability (صداقت داده) | T-FIX-11 | ProgressSample contract alignment | PENDING |
 | 4 | T-FIX-12 | Reflex tick truth | PENDING |
@@ -855,7 +855,7 @@ testing; cooldown modelling (T-FIX-21).
 
 ## T-FIX-09 — Oscillator→drives coupling investigation
 
-**Status:** PENDING
+**Status:** DONE
 **Depends on:** none
 **Evidence:** `MetaStateGenerator.step` computes the oscillator output and
 stores it in `_last_oscillator_value`, but never adds it to the drive
@@ -883,12 +883,12 @@ over 1000 seconds of simulated collection time.
 - Deterministic components use per-component seeds only.
 
 **Acceptance:**
-- [ ] The record names the exact missing coupling with file:line references.
-- [ ] It lists at least two candidate couplings and their expected spectral
+- [x] The record names the exact missing coupling with file:line references.
+- [x] It lists at least two candidate couplings and their expected spectral
       consequences.
-- [ ] It states a recommendation and whether the two time scales are
+- [x] It states a recommendation and whether the two time scales are
       intended.
-- [ ] If any code changed, determinism tests pass and `ruff`/`mypy` are
+- [x] If any code changed, determinism tests pass and `ruff`/`mypy` are
       clean.
 
 **Out of scope:** changing the spectral target (T-FIX-10); band/seed
