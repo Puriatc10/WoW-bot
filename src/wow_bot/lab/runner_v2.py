@@ -82,7 +82,13 @@ from wow_bot.strategist.orchestrator_v2 import (
     OrchestratorV2,
 )
 from wow_bot.strategist.vocab_v2 import VocabConfig, VocabularyGuard
-from wow_bot.watchdog.health import HealthConfig, HealthState, HealthStateMachine
+from wow_bot.watchdog.health import (
+    HealthConfig,
+    HealthState,
+    HealthStateMachine,
+    MetricName,
+    MetricThresholds,
+)
 from wow_bot.watchdog.loops import ActionObservation, LoopConfig, LoopDetector
 from wow_bot.watchdog.metrics import MetricsConfig, ProgressSample, ProgressTracker
 from wow_bot.watchdog.shutdown import GracefulShutdown, ShutdownConfig, ShutdownReason
@@ -250,6 +256,7 @@ class LabRunResult:
     shutdown_report: Any | None
     reason: str
     reflex_ticks_total: int = 0
+    successful_actions_total: int = 0
 
     def to_json(self) -> dict[str, Any]:
         """Convert result snapshot into a JSON-serializable dictionary representation."""
@@ -265,6 +272,7 @@ class LabRunResult:
             "shutdown_report": report_json,
             "reason": self.reason,
             "reflex_ticks_total": self.reflex_ticks_total,
+            "successful_actions_total": self.successful_actions_total,
         }
 
 
@@ -727,8 +735,21 @@ async def build_lab_runtime_async(
         session=session,
     )
 
+    health_cfg = HealthConfig.default()
+    if not include_reflex_loop and reflex_loop is None:
+        thresholds = dict(health_cfg.thresholds)
+        thresholds[MetricName.REFLEX_TICK_RATE_HZ] = MetricThresholds(
+            degraded_below=0.0, critical_below=0.0, recovery_margin=0.0
+        )
+        health_cfg = HealthConfig(
+            thresholds=thresholds,
+            hold_s=health_cfg.hold_s,
+            min_observations_for_transition=health_cfg.min_observations_for_transition,
+            rate_metrics=health_cfg.rate_metrics - {MetricName.REFLEX_TICK_RATE_HZ},
+        )
+
     health = HealthStateMachine(
-        config=HealthConfig.default(),
+        config=health_cfg,
         session=session,
     )
     progress = ProgressTracker(config=MetricsConfig())
@@ -932,13 +953,28 @@ def build_lab_runtime(
     )
 
 
+def make_action_signature(
+    goal: str,
+    fsm_state: str | FSMState,
+    action: str | Any,
+) -> str:
+    """Construct deterministic action observation signature excluding cycle indices.
+
+    Format: '<goal>:<fsm_state>:<action_description>'
+    Guarantees no monotonically changing cycle counters are embedded.
+    """
+    state_str = fsm_state.value if isinstance(fsm_state, FSMState) else str(fsm_state)
+    act_str = str(action)
+    return f"{goal}:{state_str}:{act_str}"
+
+
 async def _run_cycle(
     runtime: LabRuntime,
     prev_goal: str,
     cached_vendor: VendorLocation | None,
     cycle_index: int,
     last_summary: WorldSummary | None,
-) -> tuple[str, VendorLocation | None, bool, WorldSummary | None]:
+) -> tuple[str, VendorLocation | None, bool, WorldSummary | None, bool, str]:
     """Execute a single farm loop cycle step."""
     rcfg = runtime.config_snapshot.get("runner_config", {})
     sync_interval = int(rcfg.get("world_sync_interval_cycles", 1))
@@ -962,6 +998,8 @@ async def _run_cycle(
 
     failed = False
     new_goal = prev_goal
+    action_succeeded = False
+    action_sig = "no_action"
 
     if prev_goal == "farm":
         if world_summary is None:
@@ -991,17 +1029,23 @@ async def _run_cycle(
     ):
         intent = runtime.fsm.tick(state, meta, now=runtime.clock())
         if intent is not None:
+            action_sig = repr(intent)
             act_res = runtime.actuator.execute(intent, position=pos)
             fb = classify_action_result(act_res, ts=runtime.clock())
             runtime.fsm.submit_feedback(fb, now=runtime.clock())
-            if act_res.status == ActionStatus.FAILED:
+            if act_res.status == ActionStatus.SUCCESS:
+                action_succeeded = True
+            elif act_res.status == ActionStatus.FAILED:
                 failed = True
 
     elif new_goal == "flee" or curr_fsm_state == FSMState.FLEEING:
         flee_res = runtime.flee.execute(state)  # type: ignore[arg-type]
         if flee_res.target_xy is not None:
+            action_sig = f"flee_to:{flee_res.target_xy}"
             nav_res = runtime.navigator.go_to(flee_res.target_xy)
-            if nav_res.status in (NavStatus.FAILED, NavStatus.HARD_FAILURE, NavStatus.TIMEOUT):
+            if nav_res.status == NavStatus.SUCCESS:
+                action_succeeded = True
+            elif nav_res.status in (NavStatus.FAILED, NavStatus.HARD_FAILURE, NavStatus.TIMEOUT):
                 failed = True
                 fb = Feedback(
                     kind=FeedbackKind.ACTION_FAILED,
@@ -1017,12 +1061,16 @@ async def _run_cycle(
                 from_xy=pos,
                 search_radius_units=50.0,
             )
+        v_node = cached_vendor.node_id if cached_vendor is not None else "none"
+        action_sig = f"vendor:{new_goal}:{v_node}"
         v_res = runtime.vendor.run(
             cached_vendor,
             state,  # type: ignore[arg-type]
             need_repair=(new_goal == "repair"),
         )
         if v_res.status in (VendorStatus.SUCCESS, VendorStatus.SKIPPED_NO_ACTION):
+            if v_res.status == VendorStatus.SUCCESS:
+                action_succeeded = True
             runtime.inventory.reset()
             new_goal = "farm"
         else:
@@ -1030,8 +1078,10 @@ async def _run_cycle(
 
     elif new_goal == "travel_to":
         target_xy = (0.0, 0.0)
+        action_sig = f"travel_to:{target_xy}"
         nav_res = runtime.navigator.go_to(target_xy)
         if nav_res.status == NavStatus.SUCCESS:
+            action_succeeded = True
             new_goal = "farm"
         elif nav_res.status in (NavStatus.FAILED, NavStatus.HARD_FAILURE, NavStatus.TIMEOUT):
             failed = True
@@ -1046,10 +1096,13 @@ async def _run_cycle(
         # IDLE / SCANNING / tick
         intent = runtime.fsm.tick(state, meta, now=runtime.clock())
         if intent is not None:
+            action_sig = repr(intent)
             act_res = runtime.actuator.execute(intent, position=pos)
             fb = classify_action_result(act_res, ts=runtime.clock())
             runtime.fsm.submit_feedback(fb, now=runtime.clock())
-            if act_res.status == ActionStatus.FAILED:
+            if act_res.status == ActionStatus.SUCCESS:
+                action_succeeded = True
+            elif act_res.status == ActionStatus.FAILED:
                 failed = True
 
     # Inventory observation
@@ -1061,7 +1114,7 @@ async def _run_cycle(
     if runtime.inventory.is_full():
         new_goal = "go_to_vendor"
 
-    return new_goal, cached_vendor, failed, world_summary
+    return new_goal, cached_vendor, failed, world_summary, action_succeeded, action_sig
 
 
 def _finish_run(
@@ -1072,6 +1125,7 @@ def _finish_run(
     runtime: LabRuntime,
     reason: str,
     shutdown_report: Any | None = None,
+    successful_actions_total: int = 0,
 ) -> LabRunResult:
     """Construct LabRunResult and emit session event if attached."""
     duration_s = max(0.0, runtime.clock() - start_time)
@@ -1088,6 +1142,7 @@ def _finish_run(
         shutdown_report=shutdown_report,
         reason=reason,
         reflex_ticks_total=reflex_ticks,
+        successful_actions_total=successful_actions_total,
     )
     if runtime.session is not None:
         runtime.session.write_event(
@@ -1099,6 +1154,7 @@ def _finish_run(
                 "duration_s": duration_s,
                 "reason": reason,
                 "reflex_ticks_total": reflex_ticks,
+                "successful_actions_total": successful_actions_total,
             }
         )
     return res
@@ -1122,6 +1178,7 @@ async def run_lab_loop_async(
     cycles_completed = 0
     failures = 0
     consecutive_failures = 0
+    successful_actions_total = 0
     prev_goal = "farm"
     cached_vendor: VendorLocation | None = None
     last_summary: WorldSummary | None = None
@@ -1171,7 +1228,7 @@ async def run_lab_loop_async(
                         position=pos,
                         inventory_count=getattr(st, "inventory_count", 0),
                         level_or_xp=float(getattr(st, "level", getattr(st, "xp", 0.0))),
-                        successful_actions_total=cycles_completed * 10,
+                        successful_actions_total=successful_actions_total,
                         reflex_ticks_total=runtime.reflex_loop.tick_index,
                     )
                 )
@@ -1183,6 +1240,7 @@ async def run_lab_loop_async(
             runtime,
             reason=reason,
             shutdown_report=shutdown_report,
+            successful_actions_total=successful_actions_total,
         )
 
     try:
@@ -1223,9 +1281,15 @@ async def run_lab_loop_async(
                 )
 
             try:
-                prev_goal, cached_vendor, failed, last_summary = await _run_cycle(
+                cycle_res = await _run_cycle(
                     runtime, prev_goal, cached_vendor, cycles_completed, last_summary
                 )
+                if len(cycle_res) == 4:
+                    prev_goal, cached_vendor, failed, last_summary = cycle_res
+                    action_succeeded = False
+                    action_sig = "no_action"
+                else:
+                    prev_goal, cached_vendor, failed, last_summary, action_succeeded, action_sig = cycle_res
             except asyncio.CancelledError:
                 return _finalize_run(
                     LabRunStatus.STOP_EVENT_SET,
@@ -1239,6 +1303,9 @@ async def run_lab_loop_async(
                 )
 
             cycles_completed += 1
+            if action_succeeded:
+                successful_actions_total += 1
+
             if failed:
                 failures += 1
                 consecutive_failures += 1
@@ -1283,7 +1350,7 @@ async def run_lab_loop_async(
                 position=pos,
                 inventory_count=getattr(state, "inventory_count", 0),
                 level_or_xp=float(getattr(state, "level", getattr(state, "xp", 0.0))),
-                successful_actions_total=cycles_completed * 10,
+                successful_actions_total=successful_actions_total,
                 reflex_ticks_total=reflex_ticks,
             )
             runtime.progress.update(sample)
@@ -1300,9 +1367,10 @@ async def run_lab_loop_async(
                 )
 
             # Loop detector check
+            sig = make_action_signature(prev_goal, runtime.fsm.current_state, action_sig)
             observation = ActionObservation(
                 ts=runtime.clock(),
-                signature=f"cycle_{cycles_completed}:{prev_goal}",
+                signature=sig,
                 level_or_xp=float(getattr(state, "level", getattr(state, "xp", 0.0))),
             )
             loop_res = runtime.loops.observe(observation)

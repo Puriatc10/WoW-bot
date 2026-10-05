@@ -384,6 +384,27 @@ or Config, or changing aggregate/reporting semantics (T-FIX-18/19).
 After T-FIX-12 merges, this exception is closed. Any future edit to a module that
 STRATEGY A treats as FROZEN requires its own explicit exception recorded in this file.
 
+### 5.15 Bounded exception: T-FIX-13 Health counter truth
+
+The task T-FIX-13 authorizes a single, bounded exception to STRATEGY A.
+Its sole purpose is to source health and action counters from real events
+rather than cycle counts in `src/wow_bot/lab/runner_v2.py`: accumulating
+`successful_actions_total` only when actions actually succeed, excluding
+monotonically increasing quantities (notably cycle indices) from loop-detector
+action signatures (via `make_action_signature`), updating `LabRunResult` to report
+`successful_actions_total`, aligning health machine configuration when optional reflex
+components are absent, and ensuring health counter values match underlying
+session event streams. This is the only file scope of this exception in frozen
+pre-lab modules: `src/wow_bot/lab/runner_v2.py`.
+
+It does NOT authorize reflex tick counting changes (T-FIX-12), humanizer timing
+analysis, modifying the GameState schema, modifying SafetyLayer, Session,
+or Config, or changing any Phase 12 artifact.
+
+After T-FIX-13 merges, this exception is closed. Any future edit to a module that
+STRATEGY A treats as FROZEN requires its own explicit exception recorded in this file.
+
+
 
 ### 5.2 Source of Tasks
 

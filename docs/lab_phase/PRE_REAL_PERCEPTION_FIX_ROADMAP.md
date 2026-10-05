@@ -121,7 +121,7 @@ Tier names are unchanged from the original revision of this document.
 | 3 | T-FIX-10 | Spectral acceptance resolution | DONE |
 | 4 — Telemetry & Observability (صداقت داده) | T-FIX-11 | ProgressSample contract alignment | DONE |
 | 4 | T-FIX-12 | Reflex tick truth | DONE |
-| 4 | T-FIX-13 | Health counter truth | PENDING |
+| 4 | T-FIX-13 | Health counter truth | DONE |
 | 4 | T-FIX-14 | Cross-platform resource metric semantics | PENDING |
 | 5 — World & Navigation | T-FIX-15 | Graph refresh after world sync | PENDING |
 | 5 | T-FIX-16 | Signal routing completeness | PENDING |
@@ -1029,7 +1029,7 @@ fabricates health tick counts instead of reading `tick_index`
 
 ## T-FIX-13 — Health counter truth
 
-**Status:** PENDING
+**Status:** DONE
 **Depends on:** T-FIX-12
 **Evidence:** counter increments happen even when no actions or reflex ticks
 occur, because the runner's health counters are fabricated from the cycle
@@ -1053,12 +1053,12 @@ different, which suppresses genuine repetition detection.
 - No deletion or truncation of health evidence on error.
 
 **Acceptance:**
-- [ ] Test: a run with no actions yields zero action and health counters.
-- [ ] Test: a repeated identical action with unchanged state is detected as
+- [x] Test: a run with no actions yields zero action and health counters.
+- [x] Test: a repeated identical action with unchanged state is detected as
       repetition.
-- [ ] Test: each reported counter matches the underlying event stream
+- [x] Test: each reported counter matches the underlying event stream
       count.
-- [ ] Test: the cycle index is not part of the action signature.
+- [x] Test: the cycle index is not part of the action signature.
 
 **Out of scope:** reflex tick counting (T-FIX-12); humanizer timing
 analysis.
