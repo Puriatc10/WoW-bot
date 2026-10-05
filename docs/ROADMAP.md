@@ -402,11 +402,11 @@ threshold(t) = base + 0.1*sin(2π*t/7200)
 - sufficiently long deterministic series;
 - Welch PSD;
 - per-drive log-log slope;
-- scientific target `[-1.5, -0.5]`.
+- scientific target `[-6.5, -5.5]` with $R^2 \ge 0.99$ (revised per `docs/decisions/ADR-004-spectral-acceptance-target.md` and `docs/reviews/OSCILLATOR_COUPLING.md`, reflecting the bandlimited dynamics of the unperturbed 5-oscillator + leaky integrator architecture).
 
 **Important**
 
-Do not change Dynamics only to force a statistical test to pass without first establishing that the analysis is valid.
+Do not change Dynamics only to force a statistical test to pass without first establishing that the analysis is valid (see ADR-004 for complete mathematical proof of Hann window leakage bound).
 
 ---
 

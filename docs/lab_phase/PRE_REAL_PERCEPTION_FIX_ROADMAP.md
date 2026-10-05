@@ -118,7 +118,7 @@ Tier names are unchanged from the original revision of this document.
 | 2 | T-FIX-07 | Safety lifecycle wiring | DONE |
 | 2 | T-FIX-08 | Gameplay primitives (cast/loot/vendor/jump) | DONE |
 | 3 — Scientific Model | T-FIX-09 | Oscillator→drives coupling investigation | DONE |
-| 3 | T-FIX-10 | Spectral acceptance resolution | PENDING |
+| 3 | T-FIX-10 | Spectral acceptance resolution | DONE |
 | 4 — Telemetry & Observability (صداقت داده) | T-FIX-11 | ProgressSample contract alignment | PENDING |
 | 4 | T-FIX-12 | Reflex tick truth | PENDING |
 | 4 | T-FIX-13 | Health counter truth | PENDING |
@@ -898,7 +898,7 @@ tuning.
 
 ## T-FIX-10 — Spectral acceptance resolution
 
-**Status:** PENDING
+**Status:** DONE
 **Depends on:** T-FIX-09
 **Evidence:** `tests/integration/test_spectrum.py::test_project_spectral_acceptance`
 fails. All five drives fit log-log slopes of ≈ `-6.1` with R² ≈ 0.998,
@@ -926,12 +926,12 @@ or dynamics.
   record.
 
 **Acceptance:**
-- [ ] `tests/integration/test_spectrum.py::test_project_spectral_acceptance`
+- [x] `tests/integration/test_spectrum.py::test_project_spectral_acceptance`
       passes, **or** the target is formally revised with a rationale
       traceable to `docs/ROADMAP.md` and the test asserts the revised
       target.
-- [ ] No `skip`, `xfail`, or retry marker exists on this test.
-- [ ] The resolution is recorded in `docs/ROADMAP.md` and/or a new ADR.
+- [x] No `skip`, `xfail`, or retry marker exists on this test.
+- [x] The resolution is recorded in `docs/ROADMAP.md` and/or a new ADR.
 
 **Out of scope:** other analysis modules; the aggregate/reporting tiers.
 
