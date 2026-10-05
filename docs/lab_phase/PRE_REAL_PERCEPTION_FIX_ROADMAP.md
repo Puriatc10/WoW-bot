@@ -120,7 +120,7 @@ Tier names are unchanged from the original revision of this document.
 | 3 — Scientific Model | T-FIX-09 | Oscillator→drives coupling investigation | DONE |
 | 3 | T-FIX-10 | Spectral acceptance resolution | DONE |
 | 4 — Telemetry & Observability (صداقت داده) | T-FIX-11 | ProgressSample contract alignment | DONE |
-| 4 | T-FIX-12 | Reflex tick truth | PENDING |
+| 4 | T-FIX-12 | Reflex tick truth | DONE |
 | 4 | T-FIX-13 | Health counter truth | PENDING |
 | 4 | T-FIX-14 | Cross-platform resource metric semantics | PENDING |
 | 5 — World & Navigation | T-FIX-15 | Graph refresh after world sync | PENDING |
@@ -989,7 +989,7 @@ incremental contract is ambiguous.
 
 ## T-FIX-12 — Reflex tick truth
 
-**Status:** PENDING
+**Status:** DONE
 **Depends on:** T-FIX-06
 **Evidence:** quiet ticks are omitted from session logging
 (`reflex/loop.py:178-190`), so counting `reflex_tick` events is not a
@@ -1015,12 +1015,12 @@ fabricates health tick counts instead of reading `tick_index`
   `ReflexLoop.tick_index` or an equivalent authority.
 
 **Acceptance:**
-- [ ] Test: N ticks with zero signals report N.
-- [ ] Test: the jitter series over a synthetic schedule is unbiased (no
+- [x] Test: N ticks with zero signals report N.
+- [x] Test: the jitter series over a synthetic schedule is unbiased (no
       systematic omission).
-- [ ] Test: the runner's reported tick count equals the loop's
+- [x] Test: the runner's reported tick count equals the loop's
       `tick_index`.
-- [ ] Test: log volume stays bounded over a long quiet run.
+- [x] Test: log volume stays bounded over a long quiet run.
 
 **Out of scope:** health counters (T-FIX-13); reflex rules and routing
 (T-FIX-16); lifecycle (T-FIX-06).

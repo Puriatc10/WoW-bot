@@ -13,7 +13,9 @@ from wow_bot.reflex.loop import (
     RealClock,
     ReflexError,
     ReflexLoop,
+    ReflexTelemetry,
     TickStats,
+    compute_jitter_series,
 )
 from wow_bot.reflex.rules import (
     RULES_PRIORITY_ORDER,
@@ -61,11 +63,13 @@ __all__ = [
     "RecoverySink",
     "ReflexError",
     "ReflexLoop",
+    "ReflexTelemetry",
     "SafetySignalSource",
     "SessionTimeoutSignalSource",
     "Signal",
     "SignalError",
     "SignalSource",
     "TickStats",
+    "compute_jitter_series",
     "default_rules",
 ]

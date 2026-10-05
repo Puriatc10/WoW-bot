@@ -249,6 +249,7 @@ class LabRunResult:
     duration_s: float
     shutdown_report: Any | None
     reason: str
+    reflex_ticks_total: int = 0
 
     def to_json(self) -> dict[str, Any]:
         """Convert result snapshot into a JSON-serializable dictionary representation."""
@@ -263,6 +264,7 @@ class LabRunResult:
             "duration_s": float(self.duration_s),
             "shutdown_report": report_json,
             "reason": self.reason,
+            "reflex_ticks_total": self.reflex_ticks_total,
         }
 
 
@@ -1073,6 +1075,11 @@ def _finish_run(
 ) -> LabRunResult:
     """Construct LabRunResult and emit session event if attached."""
     duration_s = max(0.0, runtime.clock() - start_time)
+    reflex_ticks = (
+        runtime.reflex_loop.tick_index
+        if runtime.reflex_loop is not None
+        else 0
+    )
     res = LabRunResult(
         status=status,
         cycles_completed=cycles_completed,
@@ -1080,6 +1087,7 @@ def _finish_run(
         duration_s=duration_s,
         shutdown_report=shutdown_report,
         reason=reason,
+        reflex_ticks_total=reflex_ticks,
     )
     if runtime.session is not None:
         runtime.session.write_event(
@@ -1090,6 +1098,7 @@ def _finish_run(
                 "failures": failures,
                 "duration_s": duration_s,
                 "reason": reason,
+                "reflex_ticks_total": reflex_ticks,
             }
         )
     return res
@@ -1139,60 +1148,77 @@ async def run_lab_loop_async(
         runtime.watchdog.start()
         managed_watchdog = True
 
+    def _finalize_run(
+        status: LabRunStatus,
+        reason: str,
+        shutdown_report: Any | None = None,
+    ) -> LabRunResult:
+        if (
+            managed_reflex
+            and runtime.reflex_loop is not None
+            and runtime.reflex_loop.is_running()
+        ):
+            runtime.reflex_loop.stop(timeout_s=1.0)
+        if runtime.reflex_loop is not None:
+            with contextlib.suppress(Exception):
+                st = runtime.game_state_source()
+                pos = _extract_position(st)
+                last_ts = runtime.progress.window_end_ts or 0.0
+                now_ts = max(runtime.clock(), last_ts + 0.001)
+                runtime.progress.update(
+                    ProgressSample(
+                        ts=now_ts,
+                        position=pos,
+                        inventory_count=getattr(st, "inventory_count", 0),
+                        level_or_xp=float(getattr(st, "level", getattr(st, "xp", 0.0))),
+                        successful_actions_total=cycles_completed * 10,
+                        reflex_ticks_total=runtime.reflex_loop.tick_index,
+                    )
+                )
+        return _finish_run(
+            status,
+            cycles_completed,
+            failures,
+            start_time,
+            runtime,
+            reason=reason,
+            shutdown_report=shutdown_report,
+        )
+
     try:
         while True:
             if runtime.safety.is_aborted():
                 reason = runtime.safety.abort_reason() or "safety_aborted"
-                return _finish_run(
+                return _finalize_run(
                     LabRunStatus.RUNTIME_ERROR,
-                    cycles_completed,
-                    failures,
-                    start_time,
-                    runtime,
                     reason=f"safety_aborted:{reason}",
                 )
 
             if runtime.watchdog is not None and runtime.watchdog.shutdown_event.is_set():
                 runtime.safety.abort(ShutdownReason.HEALTH_CRITICAL.value)
                 report = runtime.shutdown.run(ShutdownReason.HEALTH_CRITICAL)
-                return _finish_run(
+                return _finalize_run(
                     LabRunStatus.HEALTH_CRITICAL,
-                    cycles_completed,
-                    failures,
-                    start_time,
-                    runtime,
                     reason="watchdog_shutdown_requested",
                     shutdown_report=report,
                 )
 
             if stop_event is not None and stop_event.is_set():
-                return _finish_run(
+                return _finalize_run(
                     LabRunStatus.STOP_EVENT_SET,
-                    cycles_completed,
-                    failures,
-                    start_time,
-                    runtime,
                     reason="stop_event_set",
                 )
 
             if cycles_completed >= max_c:
-                return _finish_run(
+                return _finalize_run(
                     LabRunStatus.MAX_CYCLES_REACHED,
-                    cycles_completed,
-                    failures,
-                    start_time,
-                    runtime,
                     reason="max_cycles_reached",
                 )
 
             if consecutive_failures >= max_fails:
                 runtime.safety.abort("max_consecutive_failures_reached")
-                return _finish_run(
+                return _finalize_run(
                     LabRunStatus.MAX_FAILURES_REACHED,
-                    cycles_completed,
-                    failures,
-                    start_time,
-                    runtime,
                     reason="max_consecutive_failures_reached",
                 )
 
@@ -1201,22 +1227,14 @@ async def run_lab_loop_async(
                     runtime, prev_goal, cached_vendor, cycles_completed, last_summary
                 )
             except asyncio.CancelledError:
-                return _finish_run(
+                return _finalize_run(
                     LabRunStatus.STOP_EVENT_SET,
-                    cycles_completed,
-                    failures,
-                    start_time,
-                    runtime,
                     reason="cancelled",
                 )
             except Exception as exc:  # noqa: BLE001
                 runtime.safety.abort(f"critical_failure:{type(exc).__name__}:{exc}")
-                return _finish_run(
+                return _finalize_run(
                     LabRunStatus.RUNTIME_ERROR,
-                    cycles_completed,
-                    failures,
-                    start_time,
-                    runtime,
                     reason=f"{type(exc).__name__}:{exc}",
                 )
 
@@ -1231,22 +1249,14 @@ async def run_lab_loop_async(
             try:
                 state = runtime.game_state_source()
             except asyncio.CancelledError:
-                return _finish_run(
+                return _finalize_run(
                     LabRunStatus.STOP_EVENT_SET,
-                    cycles_completed,
-                    failures,
-                    start_time,
-                    runtime,
                     reason="cancelled",
                 )
             except Exception as exc:  # noqa: BLE001
                 runtime.safety.abort(f"critical_failure:{type(exc).__name__}:{exc}")
-                return _finish_run(
+                return _finalize_run(
                     LabRunStatus.RUNTIME_ERROR,
-                    cycles_completed,
-                    failures,
-                    start_time,
-                    runtime,
                     reason=f"{type(exc).__name__}:{exc}",
                 )
 
@@ -1266,7 +1276,7 @@ async def run_lab_loop_async(
             reflex_ticks = (
                 runtime.reflex_loop.tick_index
                 if runtime.reflex_loop is not None
-                else cycles_completed * 20
+                else 0
             )
             sample = ProgressSample(
                 ts=runtime.clock(),
@@ -1283,12 +1293,8 @@ async def run_lab_loop_async(
             if runtime.health.current_state == HealthState.CRITICAL:
                 runtime.safety.abort(ShutdownReason.HEALTH_CRITICAL.value)
                 report = runtime.shutdown.run(ShutdownReason.HEALTH_CRITICAL)
-                return _finish_run(
+                return _finalize_run(
                     LabRunStatus.HEALTH_CRITICAL,
-                    cycles_completed,
-                    failures,
-                    start_time,
-                    runtime,
                     reason="health_critical",
                     shutdown_report=report,
                 )
@@ -1303,12 +1309,8 @@ async def run_lab_loop_async(
             if loop_res is not None and loop_res.detected:
                 runtime.safety.abort(ShutdownReason.LOOP_DETECTED.value)
                 report = runtime.shutdown.run(ShutdownReason.LOOP_DETECTED)
-                return _finish_run(
+                return _finalize_run(
                     LabRunStatus.LOOP_DETECTED,
-                    cycles_completed,
-                    failures,
-                    start_time,
-                    runtime,
                     reason="loop_detected",
                     shutdown_report=report,
                 )
@@ -1318,22 +1320,14 @@ async def run_lab_loop_async(
 
             await asyncio.sleep(0)
     except asyncio.CancelledError:
-        return _finish_run(
+        return _finalize_run(
             LabRunStatus.STOP_EVENT_SET,
-            cycles_completed,
-            failures,
-            start_time,
-            runtime,
             reason="cancelled",
         )
     except Exception as exc:  # noqa: BLE001
         runtime.safety.abort(f"critical_failure:{type(exc).__name__}:{exc}")
-        return _finish_run(
+        return _finalize_run(
             LabRunStatus.RUNTIME_ERROR,
-            cycles_completed,
-            failures,
-            start_time,
-            runtime,
             reason=f"{type(exc).__name__}:{exc}",
         )
     finally:

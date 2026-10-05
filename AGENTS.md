@@ -365,6 +365,25 @@ any Phase 12 artifact.
 After T-FIX-11 merges, this exception is closed. Any future edit to a module that
 STRATEGY A treats as FROZEN requires its own explicit exception recorded in this file.
 
+### 5.14 Bounded exception: T-FIX-12 Reflex tick truth
+
+The task T-FIX-12 authorizes a single, bounded exception to STRATEGY A.
+Its sole purpose is to implement total-tick telemetry and unbiased jitter tracking
+in `src/wow_bot/reflex/loop.py` (authoritative `tick_index`, `ReflexTelemetry`,
+`get_jitter_series()`, `compute_jitter_series()`, bounded periodic summary logging
+without silent omission of quiet ticks) and ensure `src/wow_bot/lab/runner_v2.py`
+reports the reflex loop's authoritative `tick_index` without fabricating counters
+when absent. This is the only file scope of this exception in frozen pre-lab
+modules: `src/wow_bot/reflex/loop.py`, `src/wow_bot/reflex/__init__.py`,
+and `src/wow_bot/lab/runner_v2.py`.
+
+It does NOT authorize health counter changes (T-FIX-13), modifying reflex rules
+or routing (T-FIX-16), changing the GameState schema, modifying SafetyLayer, Session,
+or Config, or changing aggregate/reporting semantics (T-FIX-18/19).
+
+After T-FIX-12 merges, this exception is closed. Any future edit to a module that
+STRATEGY A treats as FROZEN requires its own explicit exception recorded in this file.
+
 
 ### 5.2 Source of Tasks
 
