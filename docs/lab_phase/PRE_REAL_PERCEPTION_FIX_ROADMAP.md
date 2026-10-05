@@ -351,7 +351,7 @@ scope split, the aggregate contract, or any Phase 12 artifact.
 
 ## T-FIX-04 — Reference MockAdapter
 
-**Status:** PENDING — gated by T-FIX-21 and T-FIX-24.
+**Status:** DONE (commit `dbab035`)
 **Depends on:** T-FIX-03.6, T-FIX-21, T-FIX-24
 **Deliverables:**
 - `src/wow_bot/perception/mock_backend.py` — a `MockPerceptionBackend`
@@ -376,12 +376,12 @@ scope split, the aggregate contract, or any Phase 12 artifact.
   snapshot after emission.
 
 **Acceptance:**
-- [ ] `isinstance(MockPerceptionBackend(...), PerceptionBackend)` is true.
-- [ ] No `xfail` marker remains in `tests/test_perception_adapter.py`.
-- [ ] Every one of the eight views has an asserted expected outcome.
-- [ ] A complete end-to-end projection run succeeds for every unblocked
+- [x] `isinstance(MockPerceptionBackend(...), PerceptionBackend)` is true.
+- [x] No `xfail` marker remains in `tests/test_perception_adapter.py`.
+- [x] Every one of the eight views has an asserted expected outcome.
+- [x] A complete end-to-end projection run succeeds for every unblocked
       view and raises for every blocked view.
-- [ ] `pytest` is green.
+- [x] `pytest` is green.
 
 **Out of scope:** real capture or vision; changing the view or adapter
 contracts; wiring the backend into the lab runner (T-FIX-20).
