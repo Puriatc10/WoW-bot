@@ -28,6 +28,7 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
+from pathlib import Path
 from typing import Any
 
 from wow_bot.actuation.actuator import make_actuator
@@ -51,7 +52,11 @@ from wow_bot.executor.recovery import RecoveryBehavior, RecoveryConfig
 from wow_bot.executor.reflex_bridge import FSMReflexBridge
 from wow_bot.executor.states import FSMState
 from wow_bot.farm.loot import InventoryTracker, LootConfig, LootController
-from wow_bot.farm.profile import FarmProfile
+from wow_bot.farm.profile import (
+    FarmProfile,
+    _parse_and_validate_dict,
+    load_profile,
+)
 from wow_bot.farm.vendor import (
     VendorConfig,
     VendorController,
@@ -60,7 +65,7 @@ from wow_bot.farm.vendor import (
     resolve_vendor_node,
 )
 from wow_bot.mode import enter_mode
-from wow_bot.nav.graph import GraphConfig, NavGraph, build_graph
+from wow_bot.nav.graph import GraphConfig, NavGraph, NodeKind, build_graph
 from wow_bot.nav.navigator import NavConfig, Navigator, NavStatus, SimpleReplanner
 from wow_bot.nav.telemetry import RealCpuSource, TelemetryCollector, TelemetryConfig
 from wow_bot.perception.port import PerceptionPort
@@ -590,6 +595,27 @@ async def build_lab_runtime_async(
     for addr in getattr(config, "server_allowlist", ()):
         safety.check_allowlist(addr)
 
+    validated_profile: FarmProfile
+    if isinstance(farm_profile, FarmProfile):
+        validated_profile = farm_profile
+    elif isinstance(farm_profile, dict):
+        try:
+            validated_profile = _parse_and_validate_dict(farm_profile)
+        except Exception as exc:
+            safety.disarm()
+            raise LabRunnerError(f"Invalid farm profile dict: {exc}") from exc
+    elif isinstance(farm_profile, (str, Path)):
+        try:
+            validated_profile = load_profile(Path(farm_profile))
+        except Exception as exc:
+            safety.disarm()
+            raise LabRunnerError(f"Invalid farm profile file: {exc}") from exc
+    else:
+        safety.disarm()
+        raise LabRunnerError(
+            f"farm_profile must be a FarmProfile instance, got {type(farm_profile)}"
+        )
+
     rcfg = runner_config if runner_config is not None else LabRunnerConfig()
     clk = clock if clock is not None else time.monotonic
 
@@ -631,8 +657,18 @@ async def build_lab_runtime_async(
         safety.disarm()
         raise LabRunnerError(f"Failed to load World Model: {exc}") from exc
 
+    penalties: dict[NodeKind, float] = {}
+    if validated_profile.route_preferences is not None:
+        detour = float(validated_profile.route_preferences.max_detour_factor)
+        for ak in validated_profile.route_preferences.avoid_kinds:
+            with contextlib.suppress(ValueError):
+                penalties[NodeKind(ak)] = max(2.0, detour)
+        for pk in validated_profile.route_preferences.prefer_kinds:
+            with contextlib.suppress(ValueError):
+                penalties[NodeKind(pk)] = max(0.01, 1.0 / max(1.01, detour))
+
     try:
-        graph = await build_graph(world, config=GraphConfig())
+        graph = await build_graph(world, config=GraphConfig(directional_penalties=penalties))
     except Exception as exc:
         safety.disarm()
         raise LabRunnerError(f"Failed to build NavGraph: {exc}") from exc
@@ -879,7 +915,7 @@ async def build_lab_runtime_async(
         progress=progress,
         loops=loops,
         shutdown=shutdown,
-        profile=farm_profile,
+        profile=validated_profile,
         loot=loot_controller,
         inventory=inventory,
         vendor=vendor,
@@ -1080,6 +1116,88 @@ async def _resolve_destination_xy(
     return (0.0, 0.0), False, reason
 
 
+async def _is_target_resolvable(
+    runtime: LabRuntime,
+    target: str | None,
+) -> bool:
+    """Check if target can be resolved to concrete coordinates without logging fallbacks."""
+    if target is None or not str(target).strip():
+        return False
+
+    target_str = str(target).strip()
+
+    if "," in target_str:
+        parts = target_str.split(",")
+        if len(parts) == 2:
+            try:
+                float(parts[0].strip())
+                float(parts[1].strip())
+                return True
+            except ValueError:
+                pass
+
+    if target_str.isdigit():
+        node_id = int(target_str)
+        if runtime.graph is not None and runtime.graph.has_node(node_id):
+            return True
+        if (
+            runtime.world is not None
+            and hasattr(runtime.world, "_conn")
+            and runtime.world._conn is not None
+        ):
+            with contextlib.suppress(Exception):
+                async with runtime.world._conn.execute(
+                    "SELECT id FROM wm_map_nodes WHERE id = ? LIMIT 1",
+                    (node_id,),
+                ) as cursor:
+                    if await cursor.fetchone() is not None:
+                        return True
+
+    if runtime.world is not None:
+        if hasattr(runtime.world, "get_node_by_entity_id"):
+            with contextlib.suppress(Exception):
+                if await runtime.world.get_node_by_entity_id(target_str) is not None:
+                    return True
+
+        if (
+            hasattr(runtime.world, "_conn")
+            and runtime.world._conn is not None
+        ):
+            with contextlib.suppress(Exception):
+                async with runtime.world._conn.execute(
+                    "SELECT meta_json FROM wm_map_nodes WHERE meta_json IS NOT NULL"
+                ) as cursor:
+                    rows = await cursor.fetchall()
+                    for r in rows:
+                        if r[0]:
+                            try:
+                                meta = json.loads(r[0])
+                                if isinstance(meta, dict) and (
+                                    meta.get("name") == target_str
+                                    or meta.get("entity_id") == target_str
+                                ):
+                                    return True
+                            except (json.JSONDecodeError, TypeError, ValueError):
+                                pass
+
+        if hasattr(runtime.world, "all_nodes_and_edges"):
+            with contextlib.suppress(Exception):
+                w_nodes, _ = await runtime.world.all_nodes_and_edges()
+                for wn in w_nodes:
+                    if getattr(wn, "meta_json", None):
+                        try:
+                            meta = json.loads(wn.meta_json)
+                            if isinstance(meta, dict) and (
+                                meta.get("name") == target_str
+                                or meta.get("entity_id") == target_str
+                            ):
+                                return True
+                        except (json.JSONDecodeError, TypeError, ValueError):
+                            pass
+
+    return False
+
+
 async def _resolve_vendor_target(
     runtime: LabRuntime,
     target: str | None,
@@ -1252,6 +1370,7 @@ async def _run_cycle(
     last_summary: WorldSummary | None,
     current_target: str | None = None,
     current_strategy: Any | None = None,
+    profile_node_index: int = 0,
 ) -> tuple[
     str,
     VendorLocation | None,
@@ -1261,6 +1380,8 @@ async def _run_cycle(
     str,
     str | None,
     Any | None,
+    int,
+    bool,
 ]:
     """Execute a single farm loop cycle step."""
     rcfg = runtime.config_snapshot.get("runner_config", {})
@@ -1289,6 +1410,8 @@ async def _run_cycle(
     action_sig = "no_action"
     active_target = current_target
     active_strategy = current_strategy
+    active_profile_node_idx = profile_node_index
+    cycle_outcome_completed = False
 
     now = runtime.clock()
     needs_strategy = _is_strategy_expired(active_strategy, now)
@@ -1330,6 +1453,29 @@ async def _run_cycle(
                 strat_target = outcome.strategy.constraints.get("target")
             active_target = strat_target
 
+    # Derive target and goal from loaded profile cycle nodes if in farm goal
+    if (
+        new_goal == "farm"
+        and active_target is None
+        and runtime.profile is not None
+        and runtime.profile.cycle.nodes
+    ):
+        node_count = len(runtime.profile.cycle.nodes)
+        node_ref = runtime.profile.cycle.nodes[active_profile_node_idx % node_count]
+        active_target = node_ref.name
+        hint_goal = node_ref.behavior_hints.get("goal")
+        if hint_goal is not None:
+            new_goal = hint_goal
+        elif node_ref.kind in ("vendor", "trainer"):
+            new_goal = "sell_vendor" if node_ref.kind == "vendor" else "go_to_vendor"
+        elif node_ref.kind in ("waypoint", "node"):
+            new_goal = "travel_to"
+        else:
+            if await _is_target_resolvable(runtime, active_target):
+                new_goal = "travel_to"
+            else:
+                new_goal = "farm"
+
     # Subsystem dispatch
     curr_fsm_state = runtime.fsm.current_state
 
@@ -1368,9 +1514,15 @@ async def _run_cycle(
 
     elif new_goal in ("sell_vendor", "repair", "go_to_vendor"):
         if cached_vendor is None:
+            v_target = active_target
+            if v_target is None and runtime.profile is not None:
+                if new_goal == "repair":
+                    v_target = runtime.profile.cycle.repair.name
+                else:
+                    v_target = runtime.profile.cycle.vendor.name
             cached_vendor, _resolved, _v_reason = await _resolve_vendor_target(
                 runtime=runtime,
-                target=active_target,
+                target=v_target,
                 current_pos=pos,
                 search_radius_units=50.0,
             )
@@ -1381,7 +1533,11 @@ async def _run_cycle(
             state,  # type: ignore[arg-type]
             need_repair=(new_goal == "repair"),
         )
-        if v_res.status in (VendorStatus.SUCCESS, VendorStatus.SKIPPED_NO_ACTION):
+        if v_res.status in (
+            VendorStatus.SUCCESS,
+            VendorStatus.SKIPPED_NO_ACTION,
+            VendorStatus.NO_VENDOR_RESOLVED,
+        ):
             if v_res.status == VendorStatus.SUCCESS:
                 action_succeeded = True
             runtime.inventory.reset()
@@ -1432,7 +1588,20 @@ async def _run_cycle(
         now=runtime.clock(),
     )
     if runtime.inventory.is_full():
-        new_goal = "go_to_vendor"
+        if runtime.profile is not None and not runtime.profile.cycle.stop_when_inventory_full:
+            pass
+        else:
+            new_goal = "go_to_vendor"
+            if runtime.profile is not None:
+                active_target = runtime.profile.cycle.vendor.name
+
+    if runtime.profile is not None and runtime.profile.cycle.nodes:
+        node_count = len(runtime.profile.cycle.nodes)
+        if action_succeeded or (node_count == 1 and not failed):
+            active_profile_node_idx += 1
+            if active_profile_node_idx >= node_count:
+                cycle_outcome_completed = True
+                active_profile_node_idx = 0
 
     return (
         new_goal,
@@ -1443,6 +1612,8 @@ async def _run_cycle(
         action_sig,
         active_target,
         active_strategy,
+        active_profile_node_idx,
+        cycle_outcome_completed,
     )
 
 
@@ -1513,6 +1684,9 @@ async def run_lab_loop_async(
     last_summary: WorldSummary | None = None
     current_target: str | None = None
     current_strategy: Any | None = None
+    profile_node_index = 0
+    farm_cycles_completed = 0
+    loop_passes = 0
 
     if stop_event is not None and isinstance(runtime.sleep, _CancellableSleep):
         runtime.sleep.set_stop_event(stop_event)
@@ -1565,7 +1739,7 @@ async def run_lab_loop_async(
                 )
         return _finish_run(
             status,
-            cycles_completed,
+            farm_cycles_completed,
             failures,
             start_time,
             runtime,
@@ -1598,7 +1772,24 @@ async def run_lab_loop_async(
                     reason="stop_event_set",
                 )
 
-            if cycles_completed >= max_c:
+            if (
+                runtime.profile is not None
+                and runtime.profile.cycle.stop_after_cycles > 0
+                and farm_cycles_completed >= runtime.profile.cycle.stop_after_cycles
+            ):
+                return _finalize_run(
+                    LabRunStatus.MAX_CYCLES_REACHED,
+                    reason="stop_after_cycles_reached",
+                )
+
+            if farm_cycles_completed >= max_c:
+                return _finalize_run(
+                    LabRunStatus.MAX_CYCLES_REACHED,
+                    reason="max_cycles_reached",
+                )
+
+            max_loop_passes = max(max_c * 20, 1000)
+            if loop_passes >= max_loop_passes:
                 return _finalize_run(
                     LabRunStatus.MAX_CYCLES_REACHED,
                     reason="max_cycles_reached",
@@ -1616,24 +1807,42 @@ async def run_lab_loop_async(
                     runtime,
                     prev_goal,
                     cached_vendor,
-                    cycles_completed,
+                    loop_passes,
                     last_summary,
                     current_target,
                     current_strategy,
+                    profile_node_index,
                 )
-                if len(cycle_res) == 4:
+                cycle_outcome_completed = False
+                if len(cycle_res) >= 10:
+                    (
+                        prev_goal,
+                        cached_vendor,
+                        failed,
+                        last_summary,
+                        action_succeeded,
+                        action_sig,
+                        current_target,
+                        current_strategy,
+                        profile_node_index,
+                        cycle_outcome_completed,
+                    ) = cycle_res[:10]
+                elif len(cycle_res) == 4:
                     prev_goal, cached_vendor, failed, last_summary = cycle_res
                     action_succeeded = False
                     action_sig = "no_action"
                     current_target = None
                     current_strategy = None
+                    cycle_outcome_completed = not failed
                 elif len(cycle_res) == 6:
                     prev_goal, cached_vendor, failed, last_summary, action_succeeded, action_sig = cycle_res
                     current_target = None
                     current_strategy = None
+                    cycle_outcome_completed = not failed
                 elif len(cycle_res) == 7:
                     prev_goal, cached_vendor, failed, last_summary, action_succeeded, action_sig, current_target = cycle_res
                     current_strategy = None
+                    cycle_outcome_completed = not failed
                 else:
                     (
                         prev_goal,
@@ -1644,7 +1853,8 @@ async def run_lab_loop_async(
                         action_sig,
                         current_target,
                         current_strategy,
-                    ) = cycle_res
+                    ) = cycle_res[:8]
+                    cycle_outcome_completed = not failed
             except asyncio.CancelledError:
                 return _finalize_run(
                     LabRunStatus.STOP_EVENT_SET,
@@ -1657,7 +1867,10 @@ async def run_lab_loop_async(
                     reason=f"{type(exc).__name__}:{exc}",
                 )
 
-            cycles_completed += 1
+            loop_passes += 1
+            if cycle_outcome_completed:
+                farm_cycles_completed += 1
+            cycles_completed = farm_cycles_completed
             if action_succeeded:
                 successful_actions_total += 1
 
@@ -1666,6 +1879,16 @@ async def run_lab_loop_async(
                 consecutive_failures += 1
             else:
                 consecutive_failures = 0
+
+            if (
+                runtime.profile is not None
+                and runtime.profile.cycle.stop_after_cycles > 0
+                and farm_cycles_completed >= runtime.profile.cycle.stop_after_cycles
+            ):
+                return _finalize_run(
+                    LabRunStatus.MAX_CYCLES_REACHED,
+                    reason="stop_after_cycles_reached",
+                )
 
             # Health check
             try:

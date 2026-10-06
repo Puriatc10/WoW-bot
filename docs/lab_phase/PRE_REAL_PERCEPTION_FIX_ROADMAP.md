@@ -1359,7 +1359,7 @@ travel destination resolution (T-FIX-17).
 
 ## T-FIX-26 — Farm profile as an executed cycle plan
 
-**Status:** PROPOSED
+**Status:** DONE
 **Depends on:** T-FIX-17
 **Evidence:** the builder stores the loaded profile
 (`lab/runner_v2.py:643`), but `_run_cycle` does not select its configured
@@ -1381,11 +1381,11 @@ iteration counter measures loop passes, not farm outcomes.
   mid-run.
 
 **Acceptance:**
-- [ ] Test: a profile's configured nodes/routes determine the cycle.
-- [ ] Test: stop-after-cycles halts the loop at the configured outcome
+- [x] Test: a profile's configured nodes/routes determine the cycle.
+- [x] Test: stop-after-cycles halts the loop at the configured outcome
       count.
-- [ ] Test: the iteration counter equals completed cycles, not loop passes.
-- [ ] Test: an invalid profile fails at load time.
+- [x] Test: the iteration counter equals completed cycles, not loop passes.
+- [x] Test: an invalid profile fails at load time.
 
 **Out of scope:** navigation algorithm changes (T-FIX-15/17); profile
 schema changes beyond additive.

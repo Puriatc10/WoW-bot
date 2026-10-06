@@ -555,6 +555,28 @@ modifying any Phase 12 artifact.
 After T-FIX-25 merges, this exception is closed. Any future edit to a module that
 STRATEGY A treats as FROZEN requires its own explicit exception recorded in this file.
 
+### 5.23 Bounded exception: T-FIX-26 Farm profile as an executed cycle plan
+
+The task T-FIX-26 authorizes a single, bounded exception to STRATEGY A.
+Its sole purpose is to implement farm profile cycle plan execution and load-time
+validation in `src/wow_bot/lab/runner_v2.py` and `src/wow_bot/farm/profile.py`:
+deriving graph directional penalties from `farm_profile.route_preferences`,
+selecting configured cycle nodes in sequence from `farm_profile.cycle.nodes`,
+resolving vendor and repair targets from `farm_profile.cycle.vendor` and `repair`
+rather than unconstrained nearest heuristics, enforcing `stop_after_cycles`
+against completed farm cycles (farm outcomes), ensuring `LabRunResult.cycles_completed`
+equals completed farm cycles rather than loop passes, and validating profiles
+strictly at load time.
+This is the only file scope of this exception in frozen pre-lab modules:
+`src/wow_bot/lab/runner_v2.py` and `src/wow_bot/farm/profile.py`.
+
+It does NOT authorize navigation algorithm changes (T-FIX-15/17), profile schema
+changes beyond additive, modifying `SafetyLayer`, `Session`, or `Config`,
+modifying the `GameState` schema, or modifying any Phase 12 artifact.
+
+After T-FIX-26 merges, this exception is closed. Any future edit to a module that
+STRATEGY A treats as FROZEN requires its own explicit exception recorded in this file.
+
 
 
 ### 5.2 Source of Tasks
