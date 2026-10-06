@@ -122,8 +122,8 @@ Tier names are unchanged from the original revision of this document.
 | 4 — Telemetry & Observability (صداقت داده) | T-FIX-11 | ProgressSample contract alignment | DONE |
 | 4 | T-FIX-12 | Reflex tick truth | DONE |
 | 4 | T-FIX-13 | Health counter truth | DONE |
-| 4 | T-FIX-14 | Cross-platform resource metric semantics | PENDING |
-| 5 — World & Navigation | T-FIX-15 | Graph refresh after world sync | PENDING |
+| 4 | T-FIX-14 | Cross-platform resource metric semantics | DONE |
+| 5 — World & Navigation | T-FIX-15 | Graph refresh after world sync | DONE |
 | 5 | T-FIX-16 | Signal routing completeness | PENDING |
 | 5 | T-FIX-17 | travel_to / vendor target correctness | PENDING |
 | 6 — Aggregate & Reporting | T-FIX-18 | Aggregate stability summaries | PENDING |
@@ -1113,7 +1113,7 @@ artifact; the aggregate contract.
 
 ## T-FIX-15 — Graph refresh after world sync
 
-**Status:** PENDING
+**Status:** DONE
 **Depends on:** none
 **Evidence:** `WorldSync` stores entities in `wm_entities_seen`, but
 `WorldSummary` queries map nodes and combat history
@@ -1145,12 +1145,12 @@ observed.
   keyed on `entity_id` as `WorldSync.mark_seen` already requires.
 
 **Acceptance:**
-- [ ] Test: a synced entity becomes a graph node with a valid kind.
-- [ ] Test: a synced entity with an unknown kind is skipped, not
+- [x] Test: a synced entity becomes a graph node with a valid kind.
+- [x] Test: a synced entity with an unknown kind is skipped, not
       defaulted.
-- [ ] Test: a stale entity expires per the configured policy.
-- [ ] Test: repeated syncs of one stable id do not duplicate nodes.
-- [ ] Test: node growth stays bounded over many syncs.
+- [x] Test: a stale entity expires per the configured policy.
+- [x] Test: repeated syncs of one stable id do not duplicate nodes.
+- [x] Test: node growth stays bounded over many syncs.
 
 **Out of scope:** the A* algorithm; navigator replanning; `entity_id`
 stability policy (a perception-implementation concern, ADR-002 unresolved

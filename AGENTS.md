@@ -426,6 +426,29 @@ modifying the `GameState` schema, `SafetyLayer`, `Session`, or `Config`.
 After T-FIX-14 merges, this exception is closed. Any future edit to a module that
 STRATEGY A treats as FROZEN requires its own explicit exception recorded in this file.
 
+### 5.17 Bounded exception: T-FIX-15 Graph refresh after world sync
+
+The task T-FIX-15 authorizes a single, bounded exception to STRATEGY A.
+Its sole purpose is to implement promotion of observed entities into graph
+nodes, stale-entity expiry, and graph refresh in `src/wow_bot/world/sync.py`,
+`src/wow_bot/world/store.py`, and `src/wow_bot/world/schema.py`: promoting
+entities with valid kinds (`PROMOTABLE_NODE_KINDS`) into `wm_map_nodes` via
+`upsert_entity_node`, skipping entities with unknown or unpromotable kinds,
+implementing configurable staleness expiry policy (`entity_expiry_seconds`) via
+`expire_stale_entities`, bounding node growth by updating stable entity IDs,
+and providing graph refresh mechanisms (`refresh_graph`).
+This is the only file scope of this exception in frozen pre-lab modules:
+`src/wow_bot/world/sync.py`, `src/wow_bot/world/store.py`, and
+`src/wow_bot/world/schema.py`.
+
+It does NOT authorize modifying the A* algorithm, navigator replanning,
+changing the `GameState` schema, modifying `SafetyLayer`, `Session`, or `Config`,
+or modifying any Phase 12 artifact.
+
+After T-FIX-15 merges, this exception is closed. Any future edit to a module that
+STRATEGY A treats as FROZEN requires its own explicit exception recorded in this file.
+
+
 
 
 ### 5.2 Source of Tasks

@@ -9,10 +9,14 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Protocol, runtime_checkable
+from datetime import UTC, datetime, timedelta
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from wow_bot.session import Session
-from wow_bot.world.store import VALID_NODE_KINDS, WorldModel
+from wow_bot.world.store import PROMOTABLE_NODE_KINDS, VALID_NODE_KINDS, WorldModel
+
+if TYPE_CHECKING:
+    from wow_bot.nav.graph import GraphConfig, NavGraph
 
 
 class SyncError(Exception):
@@ -69,6 +73,8 @@ class SyncConfig:
     player_node_kind: str = "waypoint"
     player_node_min_distance_units: float = 5.0
     entity_meta_max_keys: int = 8
+    entity_expiry_seconds: float | None = 300.0
+    auto_refresh_graph: bool = False
 
     def __post_init__(self) -> None:
         if self.player_node_kind not in VALID_NODE_KINDS:
@@ -84,6 +90,10 @@ class SyncConfig:
             raise ValueError(
                 f"entity_meta_max_keys must be >= 0, got {self.entity_meta_max_keys}"
             )
+        if self.entity_expiry_seconds is not None and self.entity_expiry_seconds <= 0:
+            raise ValueError(
+                f"entity_expiry_seconds must be > 0 or None, got {self.entity_expiry_seconds}"
+            )
 
 
 @dataclass(frozen=True)
@@ -95,16 +105,20 @@ class SyncStats:
     entities_upserted: int
     entities_skipped: int
     target_seen: bool
+    entities_expired: int = 0
 
     def to_json(self) -> dict[str, Any]:
         """Return JSON-serializable dictionary representation of stats."""
-        return {
+        data: dict[str, Any] = {
             "player_node_created": self.player_node_created,
             "player_node_updated": self.player_node_updated,
             "entities_upserted": self.entities_upserted,
             "entities_skipped": self.entities_skipped,
             "target_seen": self.target_seen,
         }
+        if self.entities_expired > 0:
+            data["entities_expired"] = self.entities_expired
+        return data
 
 
 class WorldSync:
@@ -116,10 +130,37 @@ class WorldSync:
         *,
         config: SyncConfig | None = None,
         session: Session | None = None,
+        graph: NavGraph | None = None,
     ) -> None:
         self._world: WorldModel = world
         self._config: SyncConfig = config if config is not None else SyncConfig()
         self._session: Session | None = session
+        self._graph: NavGraph | None = graph
+
+    @property
+    def graph(self) -> NavGraph | None:
+        """Current navigation graph, or None if not initialized."""
+        return self._graph
+
+    async def refresh_graph(
+        self,
+        *,
+        previous: NavGraph | None = None,
+        config: GraphConfig | None = None,
+    ) -> NavGraph:
+        """Rebuild navigation graph reflecting latest WorldModel state."""
+        from wow_bot.nav.graph import build_graph, rebuild_graph
+
+        prev = previous if previous is not None else self._graph
+        if prev is not None:
+            self._graph = await rebuild_graph(
+                prev, self._world, config=config, session=self._session
+            )
+        else:
+            self._graph = await build_graph(
+                self._world, config=config, session=self._session
+            )
+        return self._graph
 
     async def sync_once(
         self,
@@ -128,6 +169,26 @@ class WorldSync:
         now: str | None = None,
     ) -> SyncStats:
         """Perform a single GameState sync pass against the WorldModel."""
+        # 0. Staleness expiry pass
+        entities_expired = 0
+        if (
+            self._config.entity_expiry_seconds is not None
+            and self._config.entity_expiry_seconds > 0
+        ):
+            ts_now = now if now is not None else datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+            cutoff_iso: str | None = None
+            try:
+                now_dt = datetime.fromisoformat(ts_now)
+                cutoff_dt = now_dt - timedelta(seconds=self._config.entity_expiry_seconds)
+                cutoff_iso = cutoff_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+            except (ValueError, TypeError):
+                cutoff_iso = None
+
+            if cutoff_iso is not None:
+                entities_expired = await self._world.expire_stale_entities(
+                    older_than_iso=cutoff_iso
+                )
+
         # 1. Player node handling
         player_x = float(state.player_x)
         player_y = float(state.player_y)
@@ -155,13 +216,18 @@ class WorldSync:
             player_node_created = True
             player_node_updated = False
 
-        # 2. Entity observation
+        # 2. Entity observation & promotion
         entities_upserted = 0
         entities_skipped = 0
 
         for entity in state.entities:
+            entity_id = getattr(entity, "entity_id", None)
+            if not isinstance(entity_id, str) or not entity_id:
+                entities_skipped += 1
+                continue
+
             kind_val = getattr(entity, "kind", None)
-            if not isinstance(kind_val, str) or not kind_val:
+            if not isinstance(kind_val, str) or not kind_val or kind_val == "unknown":
                 entities_skipped += 1
                 continue
 
@@ -179,7 +245,7 @@ class WorldSync:
                 meta = raw_meta
 
             await self._world.mark_seen(
-                entity.entity_id,
+                entity_id,
                 kind=kind_val,
                 x=entity.x,
                 y=entity.y,
@@ -187,6 +253,19 @@ class WorldSync:
                 meta=meta,
                 now=now,
             )
+
+            # Promotion of observed entities into map nodes
+            if kind_val in PROMOTABLE_NODE_KINDS:
+                await self._world.upsert_entity_node(
+                    entity_id,
+                    kind=kind_val,
+                    x=entity.x,
+                    y=entity.y,
+                    z=entity.z,
+                    meta=meta,
+                    now=now,
+                )
+
             entities_upserted += 1
 
         # 3. Target observation
@@ -204,16 +283,21 @@ class WorldSync:
             entities_upserted=entities_upserted,
             entities_skipped=entities_skipped,
             target_seen=target_seen,
+            entities_expired=entities_expired,
         )
 
-        # 4. Emit session event if session is attached
+        # 4. Optional graph refresh on sync
+        if self._config.auto_refresh_graph or self._graph is not None:
+            await self.refresh_graph()
+
+        # 5. Emit session event if session is attached
         if self._session is not None:
             self._session.write_event({
                 "event": "world_sync",
                 "stats": stats.to_json(),
             })
 
-        # 5. Return SyncStats
+        # 6. Return SyncStats
         return stats
 
     async def run_periodic(

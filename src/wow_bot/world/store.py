@@ -26,6 +26,8 @@ VALID_NODE_KINDS: set[str] = {
     "unknown",
 }
 
+PROMOTABLE_NODE_KINDS: set[str] = VALID_NODE_KINDS - {"unknown"}
+
 VALID_COMBAT_OUTCOMES: set[str] = {
     "win",
     "loss",
@@ -126,6 +128,9 @@ class WorldModel:
             await _run_sync(conn, assert_isolated, conn._connection)
             await _run_sync(conn, apply_migrations, conn._connection)
             await conn.execute("PRAGMA journal_mode = WAL;")
+            await conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_wm_map_nodes_entity_id ON wm_map_nodes(json_extract(meta_json, '$.entity_id'));"
+            )
             await _run_sync(conn, assert_isolated, conn._connection)
             await conn.commit()
         except SchemaError as err:
@@ -229,6 +234,104 @@ class WorldModel:
             updated = cursor.rowcount > 0
             await self._conn.commit()
             return updated
+
+    async def upsert_entity_node(
+        self,
+        entity_id: str,
+        *,
+        kind: str,
+        x: float,
+        y: float,
+        z: float = 0.0,
+        meta: dict[str, Any] | None = None,
+        now: str | None = None,
+    ) -> int:
+        """Upsert an observed entity as a map node in wm_map_nodes.
+
+        If a node representing entity_id already exists in wm_map_nodes,
+        updates its coordinates, kind, last_seen_at, and merges meta.
+        Otherwise, inserts a new node into wm_map_nodes.
+        """
+        if kind not in PROMOTABLE_NODE_KINDS:
+            raise WorldStoreError(
+                f"Invalid kind '{kind}' for entity node promotion. "
+                f"Expected one of {sorted(PROMOTABLE_NODE_KINDS)}"
+            )
+
+        ts = now if now is not None else _utc_now_iso()
+        node_meta = dict(meta) if meta is not None else {}
+        node_meta["entity_id"] = entity_id
+
+        async with self._get_lock():
+            cursor = await self._conn.execute(
+                """
+                SELECT id, meta_json
+                FROM wm_map_nodes
+                WHERE json_extract(meta_json, '$.entity_id') = ?
+                LIMIT 1
+                """,
+                (entity_id,),
+            )
+            existing = await cursor.fetchone()
+            if existing is not None:
+                node_id = int(existing[0])
+                existing_meta_json = str(existing[1])
+                try:
+                    loaded = json.loads(existing_meta_json)
+                    merged = {**loaded, **node_meta} if isinstance(loaded, dict) else node_meta
+                except (json.JSONDecodeError, TypeError, ValueError):
+                    merged = node_meta
+
+                meta_str = json.dumps(merged, sort_keys=True, ensure_ascii=False)
+                await self._conn.execute(
+                    """
+                    UPDATE wm_map_nodes
+                    SET x = ?, y = ?, z = ?, kind = ?, last_seen_at = ?, meta_json = ?
+                    WHERE id = ?
+                    """,
+                    (x, y, z, kind, ts, meta_str, node_id),
+                )
+                await self._conn.commit()
+                return node_id
+
+            meta_str = json.dumps(node_meta, sort_keys=True, ensure_ascii=False)
+            cursor = await self._conn.execute(
+                """
+                INSERT INTO wm_map_nodes (x, y, z, kind, discovered_at, last_seen_at, meta_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (x, y, z, kind, ts, ts, meta_str),
+            )
+            new_id = cursor.lastrowid
+            await self._conn.commit()
+            if new_id is None:
+                raise WorldStoreError("Failed to obtain inserted entity node id")
+            return new_id
+
+    async def get_node_by_entity_id(self, entity_id: str) -> NodeRow | None:
+        """Fetch node corresponding to entity_id from wm_map_nodes, if present."""
+        async with self._conn.execute(
+            """
+            SELECT id, x, y, z, kind, discovered_at, last_seen_at, meta_json
+            FROM wm_map_nodes
+            WHERE json_extract(meta_json, '$.entity_id') = ?
+            LIMIT 1
+            """,
+            (entity_id,),
+        ) as cursor:
+            row = await cursor.fetchone()
+            if row is None:
+                return None
+            return NodeRow(
+                id=int(row[0]),
+                x=float(row[1]),
+                y=float(row[2]),
+                z=float(row[3]),
+                kind=str(row[4]),
+                discovered_at=str(row[5]),
+                last_seen_at=str(row[6]),
+                meta_json=str(row[7]),
+            )
 
     async def add_edge(
         self,
@@ -420,6 +523,39 @@ class WorldModel:
                 last_seen_at=str(row[5]),
                 meta_json=str(row[6]),
             )
+
+    async def expire_stale_entities(
+        self,
+        *,
+        older_than_iso: str,
+    ) -> int:
+        """Remove entity nodes and seen entity rows not updated since older_than_iso.
+
+        Deletes entity-promoted map nodes from wm_map_nodes and corresponding rows
+        from wm_entities_seen. Foreign keys on wm_map_edges delete connected edges
+        via ON DELETE CASCADE.
+        Returns the number of expired entity map nodes removed.
+        """
+        async with self._get_lock():
+            cursor = await self._conn.execute(
+                """
+                DELETE FROM wm_map_nodes
+                WHERE json_extract(meta_json, '$.entity_id') IS NOT NULL
+                  AND last_seen_at < ?
+                """,
+                (older_than_iso,),
+            )
+            expired_nodes = cursor.rowcount
+
+            await self._conn.execute(
+                """
+                DELETE FROM wm_entities_seen
+                WHERE last_seen_at < ?
+                """,
+                (older_than_iso,),
+            )
+            await self._conn.commit()
+            return expired_nodes
 
     async def record_route(
         self,

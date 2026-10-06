@@ -10,8 +10,10 @@ from typing import Any
 import pytest
 
 from wow_bot.config import Config
+from wow_bot.nav.graph import NodeKind, build_graph
 from wow_bot.session import Session
 from wow_bot.world.store import WorldModel
+from wow_bot.world.summary import summarize
 from wow_bot.world.sync import SyncConfig, SyncStats, WorldSync
 
 
@@ -444,3 +446,202 @@ def test_static_ast_no_forbidden_imports() -> None:
                 assert not mod.startswith(f_exact), f"Forbidden import from: {mod}"
             for f_sub in forbidden_substrings:
                 assert f_sub not in mod.lower(), f"Forbidden import containing '{f_sub}': {mod}"
+
+
+# --- T-FIX-15 Acceptance Tests ---
+
+
+@pytest.mark.asyncio
+async def test_t_fix_15_synced_entity_becomes_graph_node_with_valid_kind(
+    tmp_path: Path,
+) -> None:
+    """Acceptance 1: a synced entity becomes a graph node with a valid kind."""
+    db_path = tmp_path / "world.db"
+    async with await WorldModel.open(db_path) as world:
+        sync = WorldSync(world)
+        vendor = FakeEntity(entity_id="vendor_42", kind="vendor", x=15.0, y=25.0, z=1.5)
+        mob = FakeEntity(entity_id="mob_99", kind="mob", x=50.0, y=60.0, z=2.0)
+        state = FakeGameState(entities=(vendor, mob))
+
+        stats = await sync.sync_once(state, now="2026-01-01T00:00:00Z")
+        assert stats.entities_upserted == 2
+
+        # 1. Stored in wm_map_nodes
+        vendor_node = await world.get_node_by_entity_id("vendor_42")
+        assert vendor_node is not None
+        assert vendor_node.kind == "vendor"
+        assert vendor_node.x == 15.0
+        assert vendor_node.y == 25.0
+        assert vendor_node.z == 1.5
+
+        mob_node = await world.get_node_by_entity_id("mob_99")
+        assert mob_node is not None
+        assert mob_node.kind == "mob"
+        assert mob_node.x == 50.0
+        assert mob_node.y == 60.0
+
+        # 2. Reaches NavGraph
+        graph = await build_graph(world)
+        assert graph.has_node(vendor_node.id)
+        assert graph.get_node(vendor_node.id).kind == NodeKind.VENDOR
+        assert graph.has_node(mob_node.id)
+        assert graph.get_node(mob_node.id).kind == NodeKind.MOB
+
+        # 3. Discovered by WorldSummary queries
+        summary = await summarize(world, (15.0, 25.0))
+        vendor_ids = [v.id for v in summary.nearest_vendors]
+        assert vendor_node.id in vendor_ids
+
+
+@pytest.mark.asyncio
+async def test_t_fix_15_synced_entity_with_unknown_kind_skipped_not_defaulted(
+    tmp_path: Path,
+) -> None:
+    """Acceptance 2: a synced entity with an unknown kind is skipped, not defaulted."""
+    db_path = tmp_path / "world.db"
+    async with await WorldModel.open(db_path) as world:
+        sync = WorldSync(world)
+        unk_entity = FakeEntity(entity_id="unk_1", kind="unknown", x=10.0, y=20.0)
+        state = FakeGameState(entities=(unk_entity,))
+
+        stats = await sync.sync_once(state, now="2026-01-01T00:00:00Z")
+        # An entity with kind="unknown" is skipped, not defaulted
+        assert stats.entities_skipped == 1
+        assert stats.entities_upserted == 0
+
+        # Does not reach entities_seen or map_nodes
+        assert await world.get_entity("unk_1") is None
+        assert await world.get_node_by_entity_id("unk_1") is None
+
+        # NavGraph contains no nodes of kind UNKNOWN
+        graph = await build_graph(world)
+        assert not any(n.kind == NodeKind.UNKNOWN for n in graph.nodes.values())
+
+        # An entity with an unpromotable kind (e.g. critter) is not promoted to a graph node
+        critter_entity = FakeEntity(entity_id="crit_1", kind="critter", x=12.0, y=22.0)
+        state2 = FakeGameState(entities=(critter_entity,))
+        await sync.sync_once(state2, now="2026-01-01T00:01:00Z")
+        assert await world.get_node_by_entity_id("crit_1") is None
+        graph2 = await build_graph(world)
+        assert not any(n.kind == NodeKind.UNKNOWN for n in graph2.nodes.values())
+
+
+@pytest.mark.asyncio
+async def test_t_fix_15_stale_entity_expires_per_configured_policy(
+    tmp_path: Path,
+) -> None:
+    """Acceptance 3: a stale entity expires per the configured policy."""
+    db_path = tmp_path / "world.db"
+    async with await WorldModel.open(db_path) as world:
+        cfg = SyncConfig(entity_expiry_seconds=120.0)
+        sync = WorldSync(world, config=cfg)
+
+        # t0: observation of a mob
+        mob = FakeEntity(entity_id="temp_mob", kind="mob", x=10.0, y=20.0)
+        state1 = FakeGameState(player_x=0.0, player_y=0.0, entities=(mob,))
+        await sync.sync_once(state1, now="2026-01-01T00:00:00Z")
+
+        assert await world.get_node_by_entity_id("temp_mob") is not None
+        assert await world.get_entity("temp_mob") is not None
+
+        # t1 (60s later, <= 120s policy): mob not seen, but within staleness window
+        empty_state = FakeGameState(player_x=0.0, player_y=0.0, entities=())
+        stats_t1 = await sync.sync_once(empty_state, now="2026-01-01T00:01:00Z")
+        assert stats_t1.entities_expired == 0
+        assert await world.get_node_by_entity_id("temp_mob") is not None
+
+        # t2 (180s after t0, > 120s policy): mob expires
+        stats_t2 = await sync.sync_once(empty_state, now="2026-01-01T00:03:00Z")
+        assert stats_t2.entities_expired == 1
+        assert await world.get_node_by_entity_id("temp_mob") is None
+        assert await world.get_entity("temp_mob") is None
+
+        # Player waypoint node still present and did NOT expire
+        assert await world.count_nodes("waypoint") == 1
+
+        # Rebuilt graph contains no mob nodes
+        graph = await build_graph(world)
+        assert not any(n.kind == NodeKind.MOB for n in graph.nodes.values())
+
+
+@pytest.mark.asyncio
+async def test_t_fix_15_repeated_syncs_of_one_stable_id_do_not_duplicate_nodes(
+    tmp_path: Path,
+) -> None:
+    """Acceptance 4: repeated syncs of one stable id do not duplicate nodes."""
+    db_path = tmp_path / "world.db"
+    async with await WorldModel.open(db_path) as world:
+        sync = WorldSync(world)
+
+        # Pass 1
+        mob_initial = FakeEntity(entity_id="stable_mob_1", kind="mob", x=10.0, y=20.0, z=0.0)
+        state1 = FakeGameState(player_x=0.0, player_y=0.0, entities=(mob_initial,))
+        await sync.sync_once(state1, now="2026-01-01T00:00:00Z")
+
+        node1 = await world.get_node_by_entity_id("stable_mob_1")
+        assert node1 is not None
+        assert await world.count_nodes("mob") == 1
+
+        # Pass 2: mob moved to new coordinates
+        mob_moved = FakeEntity(entity_id="stable_mob_1", kind="mob", x=14.0, y=25.0, z=1.0)
+        state2 = FakeGameState(player_x=0.0, player_y=0.0, entities=(mob_moved,))
+        await sync.sync_once(state2, now="2026-01-01T00:01:00Z")
+
+        node2 = await world.get_node_by_entity_id("stable_mob_1")
+        assert node2 is not None
+        # Must update the SAME node ID rather than duplicating
+        assert node2.id == node1.id
+        assert node2.x == 14.0
+        assert node2.y == 25.0
+        assert node2.z == 1.0
+        assert await world.count_nodes("mob") == 1
+
+
+@pytest.mark.asyncio
+async def test_t_fix_15_node_growth_stays_bounded_over_many_syncs(
+    tmp_path: Path,
+) -> None:
+    """Acceptance 5: node growth stays bounded over many syncs."""
+    db_path = tmp_path / "world.db"
+    async with await WorldModel.open(db_path) as world:
+        sync = WorldSync(world)
+
+        entities = tuple(
+            FakeEntity(entity_id=f"mob_{i}", kind="mob", x=float(i * 10), y=float(i * 10))
+            for i in range(5)
+        )
+        state = FakeGameState(player_x=0.0, player_y=0.0, entities=entities)
+
+        # Perform 50 sync passes with the same 5 entities
+        for pass_idx in range(50):
+            await sync.sync_once(state, now=f"2026-01-01T00:{pass_idx:02d}:00Z")
+
+        # Exactly 5 mob nodes and 1 player waypoint node
+        assert await world.count_nodes("mob") == 5
+        assert await world.count_nodes("waypoint") == 1
+        assert await world.count_nodes() == 6
+
+
+@pytest.mark.asyncio
+async def test_t_fix_15_graph_refresh_after_sync(
+    tmp_path: Path,
+) -> None:
+    """Graph refresh explicitly rebuilds NavGraph with promoted entities."""
+    db_path = tmp_path / "world.db"
+    async with await WorldModel.open(db_path) as world:
+        cfg = SyncConfig(auto_refresh_graph=True)
+        sync = WorldSync(world, config=cfg)
+
+        assert sync.graph is None
+
+        mob = FakeEntity(entity_id="new_vendor", kind="vendor", x=30.0, y=40.0)
+        state = FakeGameState(entities=(mob,))
+        await sync.sync_once(state)
+
+        # auto_refresh_graph refreshed the graph
+        assert sync.graph is not None
+        assert sync.graph.node_count() >= 2  # player waypoint + vendor
+        vendor_node = await world.get_node_by_entity_id("new_vendor")
+        assert vendor_node is not None
+        assert sync.graph.has_node(vendor_node.id)
+        assert sync.graph.get_node(vendor_node.id).kind == NodeKind.VENDOR
