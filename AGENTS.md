@@ -448,6 +448,28 @@ or modifying any Phase 12 artifact.
 After T-FIX-15 merges, this exception is closed. Any future edit to a module that
 STRATEGY A treats as FROZEN requires its own explicit exception recorded in this file.
 
+### 5.18 Bounded exception: T-FIX-16 Signal routing completeness
+
+The task T-FIX-16 authorizes a single, bounded exception to STRATEGY A.
+Its sole purpose is to implement signal routing completeness in
+`src/wow_bot/reflex/rules.py`, `src/wow_bot/reflex/sources.py`, and
+`src/wow_bot/reflex/sinks.py`: defining declarative dispositions (`SIGNAL_DISPOSITIONS`,
+`SignalDisposition`) for every signal type produced by registered sources,
+routing `position_stuck` signals to `ENTER_RECOVERY` so they reach `RecoverySink`,
+providing fail-closed error handling and escalation for sources (`SafeSignalSource`,
+`SourceError`), and raising `UnknownSignalError` or executing explicit catch-all
+routing on unknown signal types.
+This is the only file scope of this exception in frozen pre-lab modules:
+`src/wow_bot/reflex/rules.py`, `src/wow_bot/reflex/sources.py`, and
+`src/wow_bot/reflex/sinks.py`.
+
+It does NOT authorize loop scheduling or lifecycle changes (T-FIX-06), rule policy
+tuning, combat rotation, modifying `SafetyLayer`, `Session`, or `Config`,
+modifying the `GameState` schema, or modifying any Phase 12 artifact.
+
+After T-FIX-16 merges, this exception is closed. Any future edit to a module that
+STRATEGY A treats as FROZEN requires its own explicit exception recorded in this file.
+
 
 
 

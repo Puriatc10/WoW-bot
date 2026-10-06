@@ -124,7 +124,7 @@ Tier names are unchanged from the original revision of this document.
 | 4 | T-FIX-13 | Health counter truth | DONE |
 | 4 | T-FIX-14 | Cross-platform resource metric semantics | DONE |
 | 5 — World & Navigation | T-FIX-15 | Graph refresh after world sync | DONE |
-| 5 | T-FIX-16 | Signal routing completeness | PENDING |
+| 5 | T-FIX-16 | Signal routing completeness | DONE |
 | 5 | T-FIX-17 | travel_to / vendor target correctness | PENDING |
 | 6 — Aggregate & Reporting | T-FIX-18 | Aggregate stability summaries | PENDING |
 | 6 | T-FIX-19 | Percentile proxy semantics documentation | PENDING |
@@ -1160,7 +1160,7 @@ question 1).
 
 ## T-FIX-16 — Signal routing completeness
 
-**Status:** PENDING
+**Status:** DONE
 **Depends on:** T-FIX-06
 **Evidence:** `default_rules` handles kill/safety/timeout/focus but ignores
 `position_stuck`, `position_clear`, and the `combat_*` signals emitted by
@@ -1189,11 +1189,11 @@ are not fail-closed.
   and seed.
 
 **Acceptance:**
-- [ ] Test: enumerating every signal type produced by the registered
+- [x] Test: enumerating every signal type produced by the registered
       sources, each has a rule disposition.
-- [ ] Test: a `position_stuck` signal reaches the recovery sink.
-- [ ] Test: a source failure is fail-closed (or escalated) and observable.
-- [ ] Test: an unknown signal type raises or is routed to an explicit
+- [x] Test: a `position_stuck` signal reaches the recovery sink.
+- [x] Test: a source failure is fail-closed (or escalated) and observable.
+- [x] Test: an unknown signal type raises or is routed to an explicit
       catch-all that is asserted.
 
 **Out of scope:** loop scheduling and lifecycle (T-FIX-06); rule policy
