@@ -128,8 +128,8 @@ Tier names are unchanged from the original revision of this document.
 | 5 | T-FIX-17 | travel_to / vendor target correctness | DONE |
 | 6 — Aggregate & Reporting | T-FIX-18 | Aggregate stability summaries | DONE |
 | 6 | T-FIX-19 | Percentile proxy semantics documentation | DONE |
-| 7 — Deferred / unowned gaps | T-FIX-25 | Strategist plan refresh and lifetime | PROPOSED |
-| 7 | T-FIX-26 | Farm profile as an executed cycle plan | PROPOSED |
+| 7 — Deferred / unowned gaps | T-FIX-25 | Strategist plan refresh and lifetime | DONE |
+| 7 | T-FIX-26 | Farm profile as an executed cycle plan | DONE |
 | 8 — Real perception port (from `hamberger`) | T-FIX-29 | Dependencies, assets, perception configuration | DONE |
 | 8 | T-FIX-27 | Port capture and readers | DONE |
 | 8 | T-FIX-28 | Real state builder → canonical `GameState` | DONE |
@@ -2134,4 +2134,18 @@ fact been committed in `d81ce69`, and are now `DONE`.
   added `SimulationController` in `executor/controller.py` for symbolic recording
   in `MOCK_MODE` while rejecting `dry_run=False`. Added `tests/test_gameplay_primitives.py`
   (10 tests covering all 5 acceptance criteria). `ruff` and `mypy` clean.
+- **T-FIX-25** — DONE (commit `fb4667c`). Enforced strategist plan refresh and
+  lifetime in `lab/runner_v2.py`: Strategy.valid_until is honored so expired
+  or absent strategies trigger planning requests, un-gated from the `farm`
+  sentinel, while valid strategies avoid redundant replanning within their
+  lifetime. Strategist prompt hash is logged. Added `tests/test_strategist_plan_refresh.py`
+  (4 tests covering all 4 acceptance criteria). `ruff` and `mypy` clean.
+- **T-FIX-26** — DONE (commit `bc60a39`). Farm profile cycle plan execution in
+  `lab/runner_v2.py`: graph directional penalties derived from profile route
+  preferences (`avoid_kinds`, `prefer_kinds`, `max_detour_factor`), configured
+  cycle nodes executed sequentially, vendor/repair resolved from profile,
+  `stop_after_cycles` enforced against completed farm cycles rather than loop
+  passes, `cycles_completed` reports farm outcomes, and invalid profiles fail
+  strictly at load time. Added `tests/test_farm_profile_cycle_plan.py` (4 tests
+  covering all 4 acceptance criteria). `ruff` and `mypy` clean.
 
