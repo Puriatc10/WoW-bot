@@ -141,6 +141,7 @@ STRATEGIST_EVENTS: frozenset[str] = frozenset(
         "cooldown_manual_clear",
         "vocab_accepted",
         "vocab_rejected",
+        "planning_request",
     }
 )
 WATCHDOG_EVENTS: frozenset[str] = frozenset(

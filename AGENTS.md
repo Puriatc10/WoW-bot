@@ -531,6 +531,30 @@ changing `docs/non_claims.json`, `docs/SOAK_PROTOCOL.md`, or the `NON_CLAIMS` tu
 After T-FIX-19 merges, this exception is closed. Any future edit to a module that
 STRATEGY A treats as FROZEN requires its own explicit exception recorded in this file.
 
+### 5.22 Bounded exception: T-FIX-25 Strategist plan refresh and lifetime
+
+The task T-FIX-25 authorizes a single, bounded exception to STRATEGY A.
+Its sole purpose is to implement strategist plan refresh and lifetime enforcement in
+`src/wow_bot/lab/runner_v2.py`, `src/wow_bot/strategist/orchestrator_v2.py`, and
+`src/wow_bot/strategist/vocab_v2.py`: honouring `Strategy.valid_until` so that an
+absent or expired strategy triggers a new planning request while a valid strategy does
+not re-request before `valid_until`, removing the `farm` sentinel requirement so that
+other active goals (e.g. `explore`) can also refresh when expired, preventing request
+storms via cooldown gating without LLM calls outside the strategist, logging planning
+requests with prompt hash per AGENTS.md §6.3, and adding `valid_until` support to
+`ValidatedStrategy` and `OrchestratorConfig`.
+This is the only file scope of this exception in frozen pre-lab modules:
+`src/wow_bot/lab/runner_v2.py`, `src/wow_bot/strategist/orchestrator_v2.py`, and
+`src/wow_bot/strategist/vocab_v2.py`.
+
+It does NOT authorize prompt or vocabulary content changes, changing cooldown policy values,
+modifying travel destination resolution (T-FIX-17), executing farm profiles (T-FIX-26),
+changing the `GameState` schema, modifying `SafetyLayer`, `Session`, or `Config`, or
+modifying any Phase 12 artifact.
+
+After T-FIX-25 merges, this exception is closed. Any future edit to a module that
+STRATEGY A treats as FROZEN requires its own explicit exception recorded in this file.
+
 
 
 ### 5.2 Source of Tasks

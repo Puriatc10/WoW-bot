@@ -82,7 +82,7 @@ from wow_bot.strategist.orchestrator_v2 import (
     OrchestratorOutcome,
     OrchestratorV2,
 )
-from wow_bot.strategist.vocab_v2 import VocabConfig, VocabularyGuard
+from wow_bot.strategist.vocab_v2 import ValidatedStrategy, VocabConfig, VocabularyGuard
 from wow_bot.watchdog.health import (
     HealthConfig,
     HealthState,
@@ -727,7 +727,7 @@ async def build_lab_runtime_async(
         cooldown=cooldown,
         guard=guard,
         session=session,
-        config=OrchestratorConfig(),
+        config=OrchestratorConfig(strategy_ttl_seconds=1800.0),
     )
 
     world_sync = WorldSync(
@@ -1234,6 +1234,16 @@ async def _resolve_vendor_target(
     return nearest, True, ""
 
 
+def _is_strategy_expired(strategy: Any | None, now: float) -> bool:
+    """Return True if strategy is absent (None) or its valid_until timestamp has elapsed."""
+    if strategy is None:
+        return True
+    valid_until = getattr(strategy, "valid_until", None)
+    if valid_until is None:
+        return True
+    return bool(now >= valid_until)
+
+
 async def _run_cycle(
     runtime: LabRuntime,
     prev_goal: str,
@@ -1241,7 +1251,17 @@ async def _run_cycle(
     cycle_index: int,
     last_summary: WorldSummary | None,
     current_target: str | None = None,
-) -> tuple[str, VendorLocation | None, bool, WorldSummary | None, bool, str, str | None]:
+    current_strategy: Any | None = None,
+) -> tuple[
+    str,
+    VendorLocation | None,
+    bool,
+    WorldSummary | None,
+    bool,
+    str,
+    str | None,
+    Any | None,
+]:
     """Execute a single farm loop cycle step."""
     rcfg = runtime.config_snapshot.get("runner_config", {})
     sync_interval = int(rcfg.get("world_sync_interval_cycles", 1))
@@ -1268,8 +1288,12 @@ async def _run_cycle(
     action_succeeded = False
     action_sig = "no_action"
     active_target = current_target
+    active_strategy = current_strategy
 
-    if prev_goal == "farm":
+    now = runtime.clock()
+    needs_strategy = _is_strategy_expired(active_strategy, now)
+
+    if needs_strategy:
         if world_summary is None:
             world_summary = await summarize(
                 runtime.world,
@@ -1280,10 +1304,26 @@ async def _run_cycle(
             meta=meta,  # type: ignore[arg-type]
             world=world_summary,
             state=state,  # type: ignore[arg-type]
-            now=runtime.clock(),
+            now=now,
             fsm_state=runtime.fsm.current_state,
         )
+        if runtime.session is not None and outcome.prompt_hash:
+            runtime.session.write_event({
+                "event": "planning_request",
+                "prompt_hash": outcome.prompt_hash,
+            })
         if outcome.outcome == OrchestratorOutcome.SUCCESS and outcome.strategy is not None:
+            active_strategy = outcome.strategy
+            if (
+                getattr(active_strategy, "valid_until", None) is None
+                and isinstance(active_strategy, ValidatedStrategy)
+            ):
+                active_strategy = ValidatedStrategy(
+                    goal=outcome.strategy.goal,
+                    target=getattr(outcome.strategy, "target", None),
+                    rationale=getattr(outcome.strategy, "rationale", ""),
+                    valid_until=now + 1800.0,
+                )
             new_goal = outcome.strategy.goal
             strat_target = getattr(outcome.strategy, "target", None)
             if strat_target is None and hasattr(outcome.strategy, "constraints"):
@@ -1362,6 +1402,7 @@ async def _run_cycle(
             action_succeeded = True
             new_goal = "farm"
             active_target = None
+            active_strategy = None
         elif nav_res.status in (NavStatus.FAILED, NavStatus.HARD_FAILURE, NavStatus.TIMEOUT):
             failed = True
             fb = Feedback(
@@ -1393,7 +1434,16 @@ async def _run_cycle(
     if runtime.inventory.is_full():
         new_goal = "go_to_vendor"
 
-    return new_goal, cached_vendor, failed, world_summary, action_succeeded, action_sig, active_target
+    return (
+        new_goal,
+        cached_vendor,
+        failed,
+        world_summary,
+        action_succeeded,
+        action_sig,
+        active_target,
+        active_strategy,
+    )
 
 
 def _finish_run(
@@ -1462,6 +1512,7 @@ async def run_lab_loop_async(
     cached_vendor: VendorLocation | None = None
     last_summary: WorldSummary | None = None
     current_target: str | None = None
+    current_strategy: Any | None = None
 
     if stop_event is not None and isinstance(runtime.sleep, _CancellableSleep):
         runtime.sleep.set_stop_event(stop_event)
@@ -1568,17 +1619,32 @@ async def run_lab_loop_async(
                     cycles_completed,
                     last_summary,
                     current_target,
+                    current_strategy,
                 )
                 if len(cycle_res) == 4:
                     prev_goal, cached_vendor, failed, last_summary = cycle_res
                     action_succeeded = False
                     action_sig = "no_action"
                     current_target = None
+                    current_strategy = None
                 elif len(cycle_res) == 6:
                     prev_goal, cached_vendor, failed, last_summary, action_succeeded, action_sig = cycle_res
                     current_target = None
-                else:
+                    current_strategy = None
+                elif len(cycle_res) == 7:
                     prev_goal, cached_vendor, failed, last_summary, action_succeeded, action_sig, current_target = cycle_res
+                    current_strategy = None
+                else:
+                    (
+                        prev_goal,
+                        cached_vendor,
+                        failed,
+                        last_summary,
+                        action_succeeded,
+                        action_sig,
+                        current_target,
+                        current_strategy,
+                    ) = cycle_res
             except asyncio.CancelledError:
                 return _finalize_run(
                     LabRunStatus.STOP_EVENT_SET,

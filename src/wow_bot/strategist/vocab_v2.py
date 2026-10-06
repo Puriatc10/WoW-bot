@@ -7,6 +7,7 @@ and tracks rejection counters for telemetry. Isolated from time reads, I/O, thre
 
 from __future__ import annotations
 
+import math
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import Enum
@@ -154,10 +155,19 @@ class ValidatedStrategy:
     goal: str
     target: str | None
     rationale: str
+    valid_until: float | None = None
 
     def __post_init__(self) -> None:
         if self.goal not in ALLOWED_GOALS:
             raise ValueError(f"goal '{self.goal}' is not in ALLOWED_GOALS")
+        if self.valid_until is not None and (
+            isinstance(self.valid_until, bool)
+            or not isinstance(self.valid_until, (int, float))
+            or math.isnan(self.valid_until)
+        ):
+            raise ValueError(
+                f"valid_until must be a float or None, got {self.valid_until!r}"
+            )
 
 
 @dataclass(frozen=True)

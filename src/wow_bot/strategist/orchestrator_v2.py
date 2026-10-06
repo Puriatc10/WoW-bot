@@ -66,6 +66,7 @@ class OrchestratorConfig:
     retry_on_invalid_json: bool = True
     max_rationale_chars_for_log: int = 200
     include_prompt_text_in_event: bool = False
+    strategy_ttl_seconds: float | None = None
 
     def __post_init__(self) -> None:
         if (
@@ -75,6 +76,15 @@ class OrchestratorConfig:
         ):
             raise ValueError(
                 f"max_rationale_chars_for_log must be an int >= 1, got {self.max_rationale_chars_for_log!r}"
+            )
+        if self.strategy_ttl_seconds is not None and (
+            isinstance(self.strategy_ttl_seconds, bool)
+            or not isinstance(self.strategy_ttl_seconds, (int, float))
+            or math.isnan(self.strategy_ttl_seconds)
+            or float(self.strategy_ttl_seconds) <= 0.0
+        ):
+            raise ValueError(
+                f"strategy_ttl_seconds must be a positive float, got {self.strategy_ttl_seconds!r}"
             )
 
 
@@ -144,17 +154,19 @@ class OrchestratorResult:
 
     def to_json(self) -> dict[str, Any]:
         """Return a JSON-serializable representation of the OrchestratorResult."""
+        strat_dict: dict[str, Any] | None = None
+        if self.strategy is not None:
+            strat_dict = {
+                "goal": self.strategy.goal,
+                "target": self.strategy.target,
+                "rationale": self.strategy.rationale,
+            }
+            if self.strategy.valid_until is not None:
+                strat_dict["valid_until"] = self.strategy.valid_until
+
         return {
             "outcome": self.outcome.value,
-            "strategy": (
-                {
-                    "goal": self.strategy.goal,
-                    "target": self.strategy.target,
-                    "rationale": self.strategy.rationale,
-                }
-                if self.strategy is not None
-                else None
-            ),
+            "strategy": strat_dict,
             "prompt_hash": self.prompt_hash,
             "attempts": self.attempts,
             "latency_ms": self.latency_ms,
@@ -422,12 +434,21 @@ class OrchestratorV2:
 
         # 9. Success
         assert decision.strategy is not None
+        strategy = decision.strategy
+        if strategy.valid_until is None and self._config.strategy_ttl_seconds is not None:
+            strategy = ValidatedStrategy(
+                goal=strategy.goal,
+                target=strategy.target,
+                rationale=strategy.rationale,
+                valid_until=now + float(self._config.strategy_ttl_seconds),
+            )
+
         if self._session is not None:
             payload: dict[str, Any] = {
                 "event": "strategist_success",
                 "prompt_hash": bundle.prompt_hash,
-                "goal": decision.strategy.goal,
-                "has_target": decision.strategy.target is not None,
+                "goal": strategy.goal,
+                "has_target": strategy.target is not None,
                 "attempts": attempts,
                 "latency_ms": latency_ms,
             }
@@ -437,7 +458,7 @@ class OrchestratorV2:
 
         result = OrchestratorResult(
             outcome=OrchestratorOutcome.SUCCESS,
-            strategy=decision.strategy,
+            strategy=strategy,
             prompt_hash=bundle.prompt_hash,
             attempts=attempts,
             latency_ms=latency_ms,

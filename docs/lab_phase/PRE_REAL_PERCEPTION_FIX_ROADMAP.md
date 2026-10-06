@@ -1325,7 +1325,7 @@ ownerless. Both are `PROPOSED` and require ratification.
 
 ## T-FIX-25 — Strategist plan refresh and lifetime
 
-**Status:** PROPOSED
+**Status:** DONE
 **Depends on:** T-FIX-05
 **Evidence:** `_run_cycle` only calls the orchestrator while
 `prev_goal == "farm"` (`lab/runner_v2.py:740`), so a successful
@@ -1347,10 +1347,10 @@ enforced in the lab loop.
 - Planning requests are logged with the prompt hash (AGENTS.md §6.3).
 
 **Acceptance:**
-- [ ] Test: an expired strategy triggers a new planning request.
-- [ ] Test: a valid strategy is not re-requested before `valid_until`.
-- [ ] Test: the `farm` sentinel is not required for refresh.
-- [ ] Test: the cooldown still prevents a request storm.
+- [x] Test: an expired strategy triggers a new planning request.
+- [x] Test: a valid strategy is not re-requested before `valid_until`.
+- [x] Test: the `farm` sentinel is not required for refresh.
+- [x] Test: the cooldown still prevents a request storm.
 
 **Out of scope:** prompt or vocabulary content; cooldown policy values;
 travel destination resolution (T-FIX-17).
