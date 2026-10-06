@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import math
 import random
 import time
@@ -968,13 +969,279 @@ def make_action_signature(
     return f"{goal}:{state_str}:{act_str}"
 
 
+async def _resolve_destination_xy(
+    runtime: LabRuntime,
+    target: str | None,
+    current_pos: tuple[float, float],
+) -> tuple[tuple[float, float], bool, str]:
+    """Resolve a Strategy's named target to concrete (x, y) coordinates.
+
+    Returns:
+        ((target_x, target_y), was_resolved, reason)
+    """
+    if target is None or not str(target).strip():
+        reason = "target_missing"
+        if runtime.session is not None:
+            runtime.session.write_event({
+                "event": "target_fallback",
+                "target": target,
+                "fallback_xy": [0.0, 0.0],
+                "reason": reason,
+            })
+        return (0.0, 0.0), False, reason
+
+    target_str = str(target).strip()
+
+    # 1. Coordinate string: "x,y"
+    if "," in target_str:
+        parts = target_str.split(",")
+        if len(parts) == 2:
+            try:
+                tx, ty = float(parts[0].strip()), float(parts[1].strip())
+                return (tx, ty), True, ""
+            except ValueError:
+                pass
+
+    # 2. Node ID in graph or world: digits
+    if target_str.isdigit():
+        node_id = int(target_str)
+        if runtime.graph is not None and runtime.graph.has_node(node_id):
+            g_node = runtime.graph.get_node(node_id)
+            return (g_node.x, g_node.y), True, ""
+        if (
+            runtime.world is not None
+            and hasattr(runtime.world, "_conn")
+            and runtime.world._conn is not None
+        ):
+            with contextlib.suppress(Exception):
+                async with runtime.world._conn.execute(
+                    "SELECT x, y FROM wm_map_nodes WHERE id = ? LIMIT 1",
+                    (node_id,),
+                ) as cursor:
+                    row = await cursor.fetchone()
+                    if row is not None:
+                        return (float(row[0]), float(row[1])), True, ""
+
+    # 3. Entity ID in WorldModel
+    if runtime.world is not None:
+        if hasattr(runtime.world, "get_node_by_entity_id"):
+            with contextlib.suppress(Exception):
+                node_row = await runtime.world.get_node_by_entity_id(target_str)
+                if node_row is not None:
+                    return (node_row.x, node_row.y), True, ""
+
+        # 4. Search WorldModel by name or entity_id in meta_json
+        if (
+            runtime.world is not None
+            and hasattr(runtime.world, "_conn")
+            and runtime.world._conn is not None
+        ):
+            with contextlib.suppress(Exception):
+                async with runtime.world._conn.execute(
+                    "SELECT x, y, meta_json FROM wm_map_nodes WHERE meta_json IS NOT NULL"
+                ) as cursor:
+                    rows = await cursor.fetchall()
+                    for r in rows:
+                        if r[2]:
+                            try:
+                                meta = json.loads(r[2])
+                                if isinstance(meta, dict) and (
+                                    meta.get("name") == target_str
+                                    or meta.get("entity_id") == target_str
+                                ):
+                                    return (float(r[0]), float(r[1])), True, ""
+                            except (json.JSONDecodeError, TypeError, ValueError):
+                                pass
+
+        if hasattr(runtime.world, "all_nodes_and_edges"):
+            with contextlib.suppress(Exception):
+                w_nodes, _ = await runtime.world.all_nodes_and_edges()
+                for wn in w_nodes:
+                    if getattr(wn, "meta_json", None):
+                        try:
+                            meta = json.loads(wn.meta_json)
+                            if isinstance(meta, dict) and (
+                                meta.get("name") == target_str
+                                or meta.get("entity_id") == target_str
+                            ):
+                                return (wn.x, wn.y), True, ""
+                        except (json.JSONDecodeError, TypeError, ValueError):
+                            pass
+
+    # 5. Unresolvable target -> log fallback event to session
+    reason = f"unresolvable_target:{target_str}"
+    if runtime.session is not None:
+        runtime.session.write_event({
+            "event": "target_fallback",
+            "target": target_str,
+            "fallback_xy": [0.0, 0.0],
+            "reason": reason,
+        })
+    return (0.0, 0.0), False, reason
+
+
+async def _resolve_vendor_target(
+    runtime: LabRuntime,
+    target: str | None,
+    current_pos: tuple[float, float],
+    search_radius_units: float = 50.0,
+) -> tuple[VendorLocation | None, bool, str]:
+    """Resolve vendor location honouring a named vendor target if provided,
+
+    falling back to the nearest vendor with explicit logging if unresolvable.
+    Returns:
+        (vendor_location, was_resolved, reason)
+    """
+    if target is not None and str(target).strip():
+        target_str = str(target).strip()
+
+        # 1. Lookup by entity_id in WorldModel
+        if runtime.world is not None:
+            if hasattr(runtime.world, "get_node_by_entity_id"):
+                with contextlib.suppress(Exception):
+                    node_row = await runtime.world.get_node_by_entity_id(target_str)
+                    if node_row is not None and node_row.kind in ("vendor", "trainer"):
+                        v_name = ""
+                        if node_row.meta_json:
+                            try:
+                                meta = json.loads(node_row.meta_json)
+                                if isinstance(meta, dict) and isinstance(meta.get("name"), str):
+                                    v_name = meta["name"]
+                            except (json.JSONDecodeError, TypeError, ValueError):
+                                pass
+                        return (
+                            VendorLocation(
+                                node_id=node_row.id,
+                                x=node_row.x,
+                                y=node_row.y,
+                                kind=node_row.kind,
+                                name=v_name,
+                            ),
+                            True,
+                            "",
+                        )
+
+            # 2. Lookup by node_id if digits
+            if (
+                target_str.isdigit()
+                and hasattr(runtime.world, "_conn")
+                and runtime.world._conn is not None
+            ):
+                with contextlib.suppress(Exception):
+                    async with runtime.world._conn.execute(
+                        "SELECT id, x, y, kind, meta_json FROM wm_map_nodes WHERE id = ? AND kind IN ('vendor', 'trainer') LIMIT 1",
+                        (int(target_str),),
+                    ) as cursor:
+                        row = await cursor.fetchone()
+                        if row is not None:
+                            v_name = ""
+                            if row[4]:
+                                try:
+                                    meta = json.loads(row[4])
+                                    if isinstance(meta, dict) and isinstance(meta.get("name"), str):
+                                        v_name = meta["name"]
+                                except (json.JSONDecodeError, TypeError, ValueError):
+                                    pass
+                            return (
+                                VendorLocation(
+                                    node_id=int(row[0]),
+                                    x=float(row[1]),
+                                    y=float(row[2]),
+                                    kind=str(row[3]),
+                                    name=v_name,
+                                ),
+                                True,
+                                "",
+                            )
+
+            # 3. Lookup by name or entity_id in all vendor/trainer nodes
+            if hasattr(runtime.world, "_conn") and runtime.world._conn is not None:
+                with contextlib.suppress(Exception):
+                    async with runtime.world._conn.execute(
+                        "SELECT id, x, y, kind, meta_json FROM wm_map_nodes WHERE kind IN ('vendor', 'trainer')"
+                    ) as cursor:
+                        rows = await cursor.fetchall()
+                        for row in rows:
+                            if row[4]:
+                                try:
+                                    meta = json.loads(row[4])
+                                    if isinstance(meta, dict) and (
+                                        meta.get("name") == target_str
+                                        or meta.get("entity_id") == target_str
+                                        or str(row[0]) == target_str
+                                    ):
+                                        return (
+                                            VendorLocation(
+                                                node_id=int(row[0]),
+                                                x=float(row[1]),
+                                                y=float(row[2]),
+                                                kind=str(row[3]),
+                                                name=str(meta.get("name", "")),
+                                            ),
+                                            True,
+                                            "",
+                                        )
+                                except (json.JSONDecodeError, TypeError, ValueError):
+                                    pass
+
+            if hasattr(runtime.world, "all_nodes_and_edges"):
+                with contextlib.suppress(Exception):
+                    w_nodes, _ = await runtime.world.all_nodes_and_edges()
+                    for wn in w_nodes:
+                        if wn.kind in ("vendor", "trainer") and getattr(wn, "meta_json", None):
+                            try:
+                                meta = json.loads(wn.meta_json)
+                                if isinstance(meta, dict) and (
+                                    meta.get("name") == target_str
+                                    or meta.get("entity_id") == target_str
+                                    or str(wn.id) == target_str
+                                ):
+                                    return (
+                                        VendorLocation(
+                                            node_id=wn.id,
+                                            x=wn.x,
+                                            y=wn.y,
+                                            kind=wn.kind,
+                                            name=str(meta.get("name", "")),
+                                        ),
+                                        True,
+                                        "",
+                                    )
+                            except (json.JSONDecodeError, TypeError, ValueError):
+                                pass
+
+        # Target was given but not found -> log fallback and fall back to nearest vendor
+        reason = f"unresolvable_vendor_target:{target_str}"
+        if runtime.session is not None:
+            runtime.session.write_event({
+                "event": "vendor_target_fallback",
+                "target": target_str,
+                "reason": reason,
+            })
+        fallback_vendor = await resolve_vendor_node(
+            world=runtime.world,
+            from_xy=current_pos,
+            search_radius_units=search_radius_units,
+        )
+        return fallback_vendor, False, reason
+
+    # No target specified -> default to nearest vendor
+    nearest = await resolve_vendor_node(
+        world=runtime.world,
+        from_xy=current_pos,
+        search_radius_units=search_radius_units,
+    )
+    return nearest, True, ""
+
+
 async def _run_cycle(
     runtime: LabRuntime,
     prev_goal: str,
     cached_vendor: VendorLocation | None,
     cycle_index: int,
     last_summary: WorldSummary | None,
-) -> tuple[str, VendorLocation | None, bool, WorldSummary | None, bool, str]:
+    current_target: str | None = None,
+) -> tuple[str, VendorLocation | None, bool, WorldSummary | None, bool, str, str | None]:
     """Execute a single farm loop cycle step."""
     rcfg = runtime.config_snapshot.get("runner_config", {})
     sync_interval = int(rcfg.get("world_sync_interval_cycles", 1))
@@ -1000,6 +1267,7 @@ async def _run_cycle(
     new_goal = prev_goal
     action_succeeded = False
     action_sig = "no_action"
+    active_target = current_target
 
     if prev_goal == "farm":
         if world_summary is None:
@@ -1017,6 +1285,10 @@ async def _run_cycle(
         )
         if outcome.outcome == OrchestratorOutcome.SUCCESS and outcome.strategy is not None:
             new_goal = outcome.strategy.goal
+            strat_target = getattr(outcome.strategy, "target", None)
+            if strat_target is None and hasattr(outcome.strategy, "constraints"):
+                strat_target = outcome.strategy.constraints.get("target")
+            active_target = strat_target
 
     # Subsystem dispatch
     curr_fsm_state = runtime.fsm.current_state
@@ -1056,9 +1328,10 @@ async def _run_cycle(
 
     elif new_goal in ("sell_vendor", "repair", "go_to_vendor"):
         if cached_vendor is None:
-            cached_vendor = await resolve_vendor_node(
-                world=runtime.world,
-                from_xy=pos,
+            cached_vendor, _resolved, _v_reason = await _resolve_vendor_target(
+                runtime=runtime,
+                target=active_target,
+                current_pos=pos,
                 search_radius_units=50.0,
             )
         v_node = cached_vendor.node_id if cached_vendor is not None else "none"
@@ -1073,16 +1346,22 @@ async def _run_cycle(
                 action_succeeded = True
             runtime.inventory.reset()
             new_goal = "farm"
+            active_target = None
         else:
             failed = True
 
     elif new_goal == "travel_to":
-        target_xy = (0.0, 0.0)
+        target_xy, _resolved, _t_reason = await _resolve_destination_xy(
+            runtime=runtime,
+            target=active_target,
+            current_pos=pos,
+        )
         action_sig = f"travel_to:{target_xy}"
         nav_res = runtime.navigator.go_to(target_xy)
         if nav_res.status == NavStatus.SUCCESS:
             action_succeeded = True
             new_goal = "farm"
+            active_target = None
         elif nav_res.status in (NavStatus.FAILED, NavStatus.HARD_FAILURE, NavStatus.TIMEOUT):
             failed = True
             fb = Feedback(
@@ -1114,7 +1393,7 @@ async def _run_cycle(
     if runtime.inventory.is_full():
         new_goal = "go_to_vendor"
 
-    return new_goal, cached_vendor, failed, world_summary, action_succeeded, action_sig
+    return new_goal, cached_vendor, failed, world_summary, action_succeeded, action_sig, active_target
 
 
 def _finish_run(
@@ -1182,6 +1461,7 @@ async def run_lab_loop_async(
     prev_goal = "farm"
     cached_vendor: VendorLocation | None = None
     last_summary: WorldSummary | None = None
+    current_target: str | None = None
 
     if stop_event is not None and isinstance(runtime.sleep, _CancellableSleep):
         runtime.sleep.set_stop_event(stop_event)
@@ -1282,14 +1562,23 @@ async def run_lab_loop_async(
 
             try:
                 cycle_res = await _run_cycle(
-                    runtime, prev_goal, cached_vendor, cycles_completed, last_summary
+                    runtime,
+                    prev_goal,
+                    cached_vendor,
+                    cycles_completed,
+                    last_summary,
+                    current_target,
                 )
                 if len(cycle_res) == 4:
                     prev_goal, cached_vendor, failed, last_summary = cycle_res
                     action_succeeded = False
                     action_sig = "no_action"
-                else:
+                    current_target = None
+                elif len(cycle_res) == 6:
                     prev_goal, cached_vendor, failed, last_summary, action_succeeded, action_sig = cycle_res
+                    current_target = None
+                else:
+                    prev_goal, cached_vendor, failed, last_summary, action_succeeded, action_sig, current_target = cycle_res
             except asyncio.CancelledError:
                 return _finalize_run(
                     LabRunStatus.STOP_EVENT_SET,

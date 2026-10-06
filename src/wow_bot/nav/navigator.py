@@ -223,6 +223,11 @@ class Navigator:
 
         return False
 
+    def go_to_node(self, node_id: int) -> NavResult:
+        """Move agent to graph node by looking up its coordinates and delegating to go_to."""
+        node = self._graph.get_node(node_id)
+        return self.go_to((node.x, node.y))
+
     def go_to(self, target_xy: tuple[float, float]) -> NavResult:
         """Move agent to target_xy by pathfinding and stepping through graph segments."""
         start_time = self._clock()

@@ -125,7 +125,7 @@ Tier names are unchanged from the original revision of this document.
 | 4 | T-FIX-14 | Cross-platform resource metric semantics | DONE |
 | 5 — World & Navigation | T-FIX-15 | Graph refresh after world sync | DONE |
 | 5 | T-FIX-16 | Signal routing completeness | DONE |
-| 5 | T-FIX-17 | travel_to / vendor target correctness | PENDING |
+| 5 | T-FIX-17 | travel_to / vendor target correctness | DONE |
 | 6 — Aggregate & Reporting | T-FIX-18 | Aggregate stability summaries | PENDING |
 | 6 | T-FIX-19 | Percentile proxy semantics documentation | PENDING |
 | 7 — Deferred / unowned gaps | T-FIX-25 | Strategist plan refresh and lifetime | PROPOSED |
@@ -1203,7 +1203,7 @@ tuning; combat rotation.
 
 ## T-FIX-17 — travel_to / vendor target correctness
 
-**Status:** PENDING
+**Status:** DONE
 **Depends on:** T-FIX-15
 **Evidence:** `_run_cycle` only calls the orchestrator while
 `prev_goal == "farm"` (`lab/runner_v2.py:740`); strategy targets are
@@ -1225,11 +1225,11 @@ nearest vendor rather than the requested entity (`:786`).
 - No LLM call outside the strategist.
 
 **Acceptance:**
-- [ ] Test: a strategy carrying a target changes the travel destination.
-- [ ] Test: an unresolvable target produces an explicit, logged fallback
+- [x] Test: a strategy carrying a target changes the travel destination.
+- [x] Test: an unresolvable target produces an explicit, logged fallback
       (not a silent origin trip).
-- [ ] Test: a named vendor entity is selected over a merely nearer one.
-- [ ] `ruff` and `mypy` clean.
+- [x] Test: a named vendor entity is selected over a merely nearer one.
+- [x] `ruff` and `mypy` clean.
 
 **Out of scope:** plan refresh and lifetime (T-FIX-25); graph refresh
 (T-FIX-15); profile execution (T-FIX-26).

@@ -470,6 +470,26 @@ modifying the `GameState` schema, or modifying any Phase 12 artifact.
 After T-FIX-16 merges, this exception is closed. Any future edit to a module that
 STRATEGY A treats as FROZEN requires its own explicit exception recorded in this file.
 
+### 5.19 Bounded exception: T-FIX-17 travel_to / vendor target correctness
+
+The task T-FIX-17 authorizes a single, bounded exception to STRATEGY A.
+Its sole purpose is to implement destination resolution and vendor target correctness in
+`src/wow_bot/lab/runner_v2.py` and `src/wow_bot/nav/navigator.py`: resolving the
+active `Strategy`'s named target to a concrete destination node or entity for travel,
+recording explicit logged fallbacks when a target cannot be resolved (rather than
+silently defaulting to origin), and honouring named vendor entity targets over merely
+nearer ones during vendor resolution.
+This is the only file scope of this exception in frozen pre-lab modules:
+`src/wow_bot/lab/runner_v2.py` and `src/wow_bot/nav/navigator.py`.
+
+It does NOT authorize plan refresh and lifetime changes (T-FIX-25), profile execution
+(T-FIX-26), graph refresh (T-FIX-15), LLM calls outside the strategist, modifying
+`SafetyLayer`, `Session`, or `Config`, modifying the `GameState` schema, or modifying
+any Phase 12 artifact.
+
+After T-FIX-17 merges, this exception is closed. Any future edit to a module that
+STRATEGY A treats as FROZEN requires its own explicit exception recorded in this file.
+
 
 
 
