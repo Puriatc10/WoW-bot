@@ -513,6 +513,23 @@ documenting percentile proxy semantics (T-FIX-19).
 After T-FIX-18 merges, this exception is closed. Any future edit to a module that
 STRATEGY A treats as FROZEN requires its own explicit exception recorded in this file.
 
+### 5.21 Bounded exception: T-FIX-19 Percentile proxy semantics documentation
+
+The task T-FIX-19 authorizes a single, bounded exception to STRATEGY A.
+Its sole purpose is to update docstrings in `src/wow_bot/analysis/aggregate.py`
+documenting that cross-session percentile fields are proxies (weighted means of
+per-session medians and maxima of per-session percentiles) rather than pooled
+percentiles, and clarify the duplicate-session handling behavior.
+This is the only file scope of this exception in frozen pre-lab modules:
+`src/wow_bot/analysis/aggregate.py`.
+
+It does NOT authorize changing the aggregate runtime contract, modifying
+schema definitions in `reporting/schema_v2.py`, `analysis/lab_soak_v2.py`, or
+`analysis/aggregate.py`, modifying or regenerating any Phase 12 artifact, or
+changing `docs/non_claims.json`, `docs/SOAK_PROTOCOL.md`, or the `NON_CLAIMS` tuple.
+
+After T-FIX-19 merges, this exception is closed. Any future edit to a module that
+STRATEGY A treats as FROZEN requires its own explicit exception recorded in this file.
 
 
 

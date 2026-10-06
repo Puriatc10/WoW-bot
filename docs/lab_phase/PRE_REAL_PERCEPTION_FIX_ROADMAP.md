@@ -127,7 +127,7 @@ Tier names are unchanged from the original revision of this document.
 | 5 | T-FIX-16 | Signal routing completeness | DONE |
 | 5 | T-FIX-17 | travel_to / vendor target correctness | DONE |
 | 6 — Aggregate & Reporting | T-FIX-18 | Aggregate stability summaries | DONE |
-| 6 | T-FIX-19 | Percentile proxy semantics documentation | PENDING |
+| 6 | T-FIX-19 | Percentile proxy semantics documentation | DONE |
 | 7 — Deferred / unowned gaps | T-FIX-25 | Strategist plan refresh and lifetime | PROPOSED |
 | 7 | T-FIX-26 | Farm profile as an executed cycle plan | PROPOSED |
 | 8 — Real perception port (from `hamberger`) | T-FIX-29 | Dependencies, assets, perception configuration | DONE |
@@ -1280,7 +1280,7 @@ percentile semantics documentation (T-FIX-19).
 
 ## T-FIX-19 — Percentile proxy semantics documentation
 
-**Status:** PENDING
+**Status:** DONE
 **Depends on:** none
 **Evidence:** the implementation computes weighted means of per-session
 medians and maxima of per-session percentiles
@@ -1304,11 +1304,11 @@ metrics twice while session IDs are deduplicated (`:433`, `:678`).
 - No schema or aggregate runtime-contract change.
 
 **Acceptance:**
-- [ ] The document distinguishes proxy values from pooled percentiles with
+- [x] The document distinguishes proxy values from pooled percentiles with
       concrete field names.
-- [ ] Test: the documented duplicate-session behaviour matches the code
+- [x] Test: the documented duplicate-session behaviour matches the code
       (or the behaviour is fixed to match the documentation).
-- [ ] `docs/non_claims.json`, `docs/SOAK_PROTOCOL.md`, and the `NON_CLAIMS`
+- [x] `docs/non_claims.json`, `docs/SOAK_PROTOCOL.md`, and the `NON_CLAIMS`
       tuple are unchanged.
 
 **Out of scope:** changing the aggregate runtime contract; T12 artifacts;

@@ -847,3 +847,43 @@ def test_load_aggregate_frozen_and_round_trip(tmp_path: Path) -> None:
     assert loaded_gen.stability_summaries.crash_trend.total_crashes == 0
     assert loaded_gen.stability_summaries.rss_trend.peak_bytes_max == 1000
 
+
+def test_documented_duplicate_session_dedup_behaviour_matches_code(tmp_path: Path) -> None:
+    """Acceptance (T-FIX-19): The documented duplicate-session behavior matches code implementation."""
+    r1_dict = make_full_report_v2_dict(
+        "dup_sess",
+        tick_count=100,
+        mean_tick_period_ms=50.0,
+        p99_tick_period_ms=60.0,
+        actuator_result_count=10,
+        latency_ms_p50=10.0,
+        latency_ms_p95=20.0,
+        strategist_call_count=5,
+        strategist_p50=100.0,
+        strategist_p95=200.0,
+    )
+    s1 = make_session_dir(tmp_path, "dup_sess", report_v2_dict=r1_dict)
+
+    # Pass the same session directory twice
+    rep = aggregate_sessions([s1, s1], now=FIXED_NOW)
+
+    # 1. session_ids is deduplicated to unique set
+    assert rep.session_ids == ("dup_sess",)
+    assert rep.session_count == 1
+
+    # 2. session_sources preserves every input directory (length 2)
+    assert len(rep.session_sources) == 2
+    assert [src.session_id for src in rep.session_sources] == ["dup_sess", "dup_sess"]
+
+    # 3. Counters are accumulated twice across loaded reports
+    assert rep.perception_agnostic.report_count == 2
+    assert rep.perception_agnostic.reflex_tick_count_total == 200
+    assert rep.perception_agnostic.action_result_count_total == 20
+    assert rep.perception_agnostic.strategist_call_count_total == 10
+
+    # 4. Weighted means remain mathematically equivalent
+    assert rep.perception_agnostic.reflex_tick_period_ms_mean == pytest.approx(50.0)
+    assert rep.perception_agnostic.action_latency_ms_p50 == pytest.approx(10.0)
+    assert rep.perception_agnostic.strategist_latency_ms_p50 == pytest.approx(100.0)
+
+

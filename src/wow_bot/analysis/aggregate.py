@@ -101,14 +101,25 @@ class AggregateConfig:
 class PerceptionAgnosticMetrics:
     """Perception-agnostic execution metrics aggregated across sessions.
 
-    Note on percentile fields: Cross-session percentiles cannot be exactly
-    recomputed from per-session percentiles without raw samples.
-    - reflex_tick_period_ms_mean: weighted mean by tick_count across sessions.
-    - reflex_tick_period_ms_p95: max p99_tick_period_ms across sessions.
-    - action_latency_ms_p50: weighted mean by actuator_result_count across sessions.
-    - action_latency_ms_p95: max latency_ms_p95 across sessions.
-    - strategist_latency_ms_p50: weighted mean by call_count across sessions.
-    - strategist_latency_ms_p95: max latency_ms_p95 across sessions.
+    Note on percentile proxy semantics:
+        Cross-session percentiles cannot be reconstructed as exact pooled percentiles
+        without access to raw underlying sample streams. Therefore, cross-session
+        percentile and latency fields in this class are conservative proxies:
+        - reflex_tick_period_ms_mean: Weighted mean of per-session mean tick periods
+          weighted by tick_count across sessions.
+        - reflex_tick_period_ms_p95: Conservative proxy computed as the maximum of
+          per-session p99_tick_period_ms values across sessions.
+        - action_latency_ms_p50: Proxy computed as the weighted mean of per-session
+          latency_ms_p50 values weighted by actuator_result_count across sessions.
+        - action_latency_ms_p95: Conservative proxy computed as the maximum of
+          per-session latency_ms_p95 values across sessions.
+        - strategist_latency_ms_p50: Proxy computed as the weighted mean of per-session
+          latency_ms_p50 values weighted by call_count across sessions.
+        - strategist_latency_ms_p95: Conservative proxy computed as the maximum of
+          per-session latency_ms_p95 values across sessions.
+
+        Consumers must NOT interpret these proxy fields as exact pooled distributions.
+        See docs/aggregate_semantics.md for full rationale and reconciliation.
     """
 
     reflex_tick_count_total: int
@@ -610,6 +621,22 @@ def aggregate_sessions(
     now: str | None = None,
 ) -> AggregateReport:
     """Aggregate execution metrics across multiple session directories into an AggregateReport.
+
+    Percentile Proxy Semantics:
+        Reported latency and tick percentiles are proxies (weighted means of central
+        tendencies and maxima of upper percentiles), not pooled sample distributions.
+        See docs/aggregate_semantics.md for full details.
+
+    Duplicate Session Handling:
+        When duplicate session directories or multiple directories sharing the same
+        session_id are supplied in `session_dirs`:
+        - `session_ids` in AggregateReport is deduplicated and sorted, and `session_count`
+          equals the number of unique session IDs.
+        - `session_sources` records every provided session directory in input order.
+        - Metric accumulation iterates through every directory in `session_dirs`, meaning
+          counts and metrics for duplicate sessions are accumulated multiple times.
+        Callers must provide distinct session directories if double-counting of metrics
+        is not intended.
 
     Args:
         session_dirs: Sequence of session directory paths.
