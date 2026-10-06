@@ -14,7 +14,14 @@ from wow_bot.analysis.aggregate import (
     NON_CLAIMS,
     AggregateConfig,
     AggregateError,
+    CrashTrendSummary,
+    HumanizerFitSummary,
+    LogTrendSummary,
+    RSSTrendSummary,
+    StabilitySummaries,
     aggregate_sessions,
+    aggregate_stability_summaries,
+    load_aggregate,
     load_report_v2,
     load_soak_report,
     run_aggregate,
@@ -579,6 +586,7 @@ def test_static_ast_inspection() -> None:
     allowed_module_names = {
         "wow_bot.reporting.schema_v2",
         "wow_bot.analysis.lab_soak_v2",
+        "wow_bot.analysis.lab_timing_v2",
     }
 
     for node in ast.walk(tree):
@@ -609,3 +617,233 @@ def test_static_ast_inspection() -> None:
                 "time",
                 "perf_counter",
             ), f"Forbidden time call found in aggregate.py: time.{node.func.attr}"
+
+
+# ---------------------------------------------------------------------------
+# T-FIX-18: Stability Summaries Acceptance Tests
+# ---------------------------------------------------------------------------
+
+
+def test_aggregate_stability_summaries_with_real_soak_fixture() -> None:
+    """Acceptance (T-FIX-18): Real soak report fixture (runs/lab/soak-1h) aggregates stability summaries correctly."""
+    soak_sess_dir = Path("runs/lab/soak-1h")
+    assert soak_sess_dir.exists(), f"Real fixture missing: {soak_sess_dir}"
+
+    report = aggregate_sessions([soak_sess_dir], now=FIXED_NOW)
+
+    # 1. Report v2 is absent in soak-1h -> report_count is 0 distinctly reported
+    assert report.perception_agnostic.report_count == 0
+    assert report.perception_agnostic.soak_report_count == 1
+    assert [s.has_report_v2 for s in report.session_sources] == [False]
+    assert [s.has_soak_report for s in report.session_sources] == [True]
+
+    # 2. Stability summaries populated
+    stab = report.stability_summaries
+    assert stab is not None
+    assert isinstance(stab, StabilitySummaries)
+    assert isinstance(stab.crash_trend, CrashTrendSummary)
+    assert isinstance(stab.rss_trend, RSSTrendSummary)
+    assert isinstance(stab.log_trend, LogTrendSummary)
+    assert isinstance(stab.humanizer_fit, HumanizerFitSummary)
+    assert stab.soak_report_count == 1
+    assert stab.report_v2_count == 0
+
+    # 3. Crash trend: zero crashes in 1 report
+    assert stab.crash_trend.input_report_count == 1
+    assert stab.crash_trend.total_crashes == 0
+    assert stab.crash_trend.crash_rate == 0.0
+    assert stab.crash_trend.crash_reasons == ()
+
+    # 4. RSS trend: values match real soak report fixture
+    assert stab.rss_trend.input_report_count == 1
+    assert stab.rss_trend.peak_bytes_max == 142811136
+    assert stab.rss_trend.mean_slope_bytes_per_hour == pytest.approx(895226.59, rel=1e-3)
+    assert stab.rss_trend.max_slope_bytes_per_hour == pytest.approx(895226.59, rel=1e-3)
+    assert stab.rss_trend.any_growth_suspect is False
+
+    # 5. Log trend: 0 slope in real soak fixture
+    assert stab.log_trend.input_report_count == 1
+    assert stab.log_trend.mean_slope_bytes_per_hour == 0.0
+    assert stab.log_trend.any_growth_suspect is False
+
+    # 6. Humanizer fit: no report_v2 input reports -> distinctly "no_input_reports"
+    assert stab.humanizer_fit.input_report_count == 0
+    assert stab.humanizer_fit.status == "no_input_reports"
+    assert stab.humanizer_fit.total_samples == 0
+    assert stab.humanizer_fit.pit_p_value is None
+    assert stab.humanizer_fit.pit_passes is None
+
+
+def test_aggregate_stability_summaries_empty_sessions_distinguishes_no_reports() -> None:
+    """Acceptance (T-FIX-18): Zero counts are distinguishable from 'no input reports'."""
+    stab = aggregate_stability_summaries([], [])
+    assert stab.soak_report_count == 0
+    assert stab.report_v2_count == 0
+
+    # Crash trend: metrics are None when input_report_count == 0 (not 0.0 rate)
+    assert stab.crash_trend.input_report_count == 0
+    assert stab.crash_trend.total_crashes is None
+    assert stab.crash_trend.crash_rate is None
+    assert stab.crash_trend.crash_reasons == ()
+
+    # RSS & Log trends: None when no input reports
+    assert stab.rss_trend.input_report_count == 0
+    assert stab.rss_trend.peak_bytes_max is None
+    assert stab.rss_trend.mean_slope_bytes_per_hour is None
+    assert stab.rss_trend.any_growth_suspect is None
+
+    assert stab.log_trend.input_report_count == 0
+    assert stab.log_trend.mean_slope_bytes_per_hour is None
+    assert stab.log_trend.any_growth_suspect is None
+
+    # Humanizer fit: status is 'no_input_reports', metrics None
+    assert stab.humanizer_fit.input_report_count == 0
+    assert stab.humanizer_fit.status == "no_input_reports"
+    assert stab.humanizer_fit.total_samples == 0
+    assert stab.humanizer_fit.pit_passes is None
+
+
+def test_aggregate_stability_summaries_with_crashes_and_humanizer_samples(tmp_path: Path) -> None:
+    """Acceptance (T-FIX-18): Crash trends, RSS/log trends, and humanizer PIT/KS fits are summarized across >= 1 reports."""
+    # Build soak report 1: normal, no crash
+    s1_samples = [
+        SoakSample(
+            ts=float(i),
+            cpu_percent=10.0,
+            rss_bytes=1000 + i * 10,
+            log_size_bytes=100 + i * 5,
+            position_delta=1.0,
+            inventory_delta=1,
+            successful_actions_total=i,
+            reflex_ticks_total=i * 10,
+        )
+        for i in range(10)
+    ]
+    s1_rep = build_soak_report(s1_samples, session_id="s1_soak", config=SoakConfig())
+
+    # Build soak report 2: crashed with reason
+    s2_samples = [
+        SoakSample(
+            ts=float(i),
+            cpu_percent=20.0,
+            rss_bytes=2000 + i * 20,
+            log_size_bytes=200 + i * 10,
+            position_delta=1.0,
+            inventory_delta=1,
+            successful_actions_total=i,
+            reflex_ticks_total=i * 10,
+        )
+        for i in range(10)
+    ]
+    s2_rep = build_soak_report(
+        s2_samples,
+        session_id="s2_soak",
+        config=SoakConfig(),
+        crash=True,
+        crash_reason="watchdog_stagnation_timeout",
+    )
+
+    # Build report_v2 with humanizer samples
+    humanizer_samples = [100.0, 150.0, 200.0, 250.0] * 20  # 80 samples
+    r1 = {
+        "schema_version": REPORT_SCHEMA_VERSION,
+        "meta": {"session_id": "r1"},
+        "humanizer": {
+            "action_count": 80,
+            "interval_samples_ms": humanizer_samples,
+            "pause_count": 0,
+            "pause_duration_ms_mean": None,
+            "miss_click_count": 0,
+            "config_snapshot": {},
+        },
+    }
+
+    stab = aggregate_stability_summaries([s1_rep, s2_rep], [r1])
+
+    # Check crash trend: 1 out of 2 crashed -> rate 0.5
+    assert stab.soak_report_count == 2
+    assert stab.crash_trend.input_report_count == 2
+    assert stab.crash_trend.total_crashes == 1
+    assert stab.crash_trend.crash_rate == pytest.approx(0.5)
+    assert stab.crash_trend.crash_reasons == ("watchdog_stagnation_timeout",)
+
+    # Check RSS trend
+    assert stab.rss_trend.input_report_count == 2
+    assert stab.rss_trend.peak_bytes_max == max(
+        s1_rep.summary.rss_peak_bytes, s2_rep.summary.rss_peak_bytes
+    )
+    expected_mean_slope = (
+        s1_rep.summary.rss_slope_bytes_per_hour + s2_rep.summary.rss_slope_bytes_per_hour
+    ) / 2.0
+    assert stab.rss_trend.mean_slope_bytes_per_hour == pytest.approx(expected_mean_slope)
+
+    # Check log trend
+    assert stab.log_trend.input_report_count == 2
+    expected_log_slope = (
+        s1_rep.summary.log_slope_bytes_per_hour + s2_rep.summary.log_slope_bytes_per_hour
+    ) / 2.0
+    assert stab.log_trend.mean_slope_bytes_per_hour == pytest.approx(expected_log_slope)
+
+    # Check humanizer fit: 80 samples -> evaluated
+    assert stab.humanizer_fit.input_report_count == 1
+    assert stab.humanizer_fit.total_samples == 80
+    assert stab.humanizer_fit.status == "evaluated"
+    assert stab.humanizer_fit.pit_p_value is not None
+    assert isinstance(stab.humanizer_fit.pit_passes, bool)
+    assert stab.humanizer_fit.ks_statistic is not None
+    assert stab.humanizer_fit.ks_p_value is not None
+    assert isinstance(stab.humanizer_fit.ks_passes, bool)
+
+
+def test_load_aggregate_frozen_and_round_trip(tmp_path: Path) -> None:
+    """Acceptance (T-FIX-18): load_aggregate parses frozen aggregate_v1.json and supports round-trip."""
+    frozen_path = Path("runs/lab/aggregate-1h/aggregate_v1.json")
+    assert frozen_path.exists()
+
+    # 1. Parse frozen artifact
+    frozen_rep = load_aggregate(frozen_path)
+    assert frozen_rep.schema_version == AGGREGATE_SCHEMA_VERSION
+    assert frozen_rep.session_count == 1
+    assert frozen_rep.session_ids == ("soak-1h-20260922",)
+    assert frozen_rep.perception_agnostic.report_count == 0
+    assert frozen_rep.perception_agnostic.soak_report_count == 1
+    assert frozen_rep.stability_summaries is None
+    assert len(frozen_rep.non_claims) == 4
+
+    # 2. Round-trip serialization with stability_summaries populated
+    s_dir = tmp_path / "sess_round_trip"
+    s_dir.mkdir(parents=True)
+    (s_dir / "session.json").write_text(
+        json.dumps({"session_id": "sess_round_trip"}), encoding="utf-8"
+    )
+    s_samples = [
+        SoakSample(
+            ts=float(i),
+            cpu_percent=5.0,
+            rss_bytes=1000,
+            log_size_bytes=100,
+            position_delta=0.0,
+            inventory_delta=0,
+            successful_actions_total=0,
+            reflex_ticks_total=0,
+        )
+        for i in range(5)
+    ]
+    write_soak_report(
+        build_soak_report(s_samples, session_id="sess_round_trip", config=SoakConfig()),
+        s_dir / "soak_report.json",
+    )
+
+    out_file = tmp_path / "output_agg.json"
+    rep_gen = aggregate_sessions([s_dir], now=FIXED_NOW)
+    assert rep_gen.stability_summaries is not None
+    write_aggregate(rep_gen, out_file)
+
+    loaded_gen = load_aggregate(out_file)
+    assert loaded_gen.schema_version == AGGREGATE_SCHEMA_VERSION
+    assert loaded_gen.session_ids == ("sess_round_trip",)
+    assert loaded_gen.stability_summaries is not None
+    assert loaded_gen.stability_summaries.soak_report_count == 1
+    assert loaded_gen.stability_summaries.crash_trend.total_crashes == 0
+    assert loaded_gen.stability_summaries.rss_trend.peak_bytes_max == 1000
+

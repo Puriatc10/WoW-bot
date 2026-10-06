@@ -126,7 +126,7 @@ Tier names are unchanged from the original revision of this document.
 | 5 — World & Navigation | T-FIX-15 | Graph refresh after world sync | DONE |
 | 5 | T-FIX-16 | Signal routing completeness | DONE |
 | 5 | T-FIX-17 | travel_to / vendor target correctness | DONE |
-| 6 — Aggregate & Reporting | T-FIX-18 | Aggregate stability summaries | PENDING |
+| 6 — Aggregate & Reporting | T-FIX-18 | Aggregate stability summaries | DONE |
 | 6 | T-FIX-19 | Percentile proxy semantics documentation | PENDING |
 | 7 — Deferred / unowned gaps | T-FIX-25 | Strategist plan refresh and lifetime | PROPOSED |
 | 7 | T-FIX-26 | Farm profile as an executed cycle plan | PROPOSED |
@@ -1240,7 +1240,7 @@ nearest vendor rather than the requested entity (`:786`).
 
 ## T-FIX-18 — Aggregate stability summaries
 
-**Status:** PENDING
+**Status:** DONE
 **Depends on:** none
 **Evidence:** `analysis/aggregate.py` loads soak reports but uses only their
 count in the aggregate metrics (`:431`, `:482`, `:666`); it does not
@@ -1265,13 +1265,13 @@ counters do not mean the underlying event stream was empty.
 - Zero counts must be distinguishable from "no input reports".
 
 **Acceptance:**
-- [ ] Test: with ≥1 soak report, crash/RSS/log trends and humanizer fits
+- [x] Test: with ≥1 soak report, crash/RSS/log trends and humanizer fits
       are summarized with the correct input report count.
-- [ ] Test: the frozen `aggregate_v1.json` still parses unchanged.
-- [ ] Test: `report_count=0` is reported distinctly from a populated
+- [x] Test: the frozen `aggregate_v1.json` still parses unchanged.
+- [x] Test: `report_count=0` is reported distinctly from a populated
       aggregate.
-- [ ] `tests/test_non_claims_consistency.py` still passes.
-- [ ] `tests/test_aggregate.py` passes.
+- [x] `tests/test_non_claims_consistency.py` still passes.
+- [x] `tests/test_aggregate.py` passes.
 
 **Out of scope:** rewriting T12.2 or T12.3; regenerating artifacts;
 percentile semantics documentation (T-FIX-19).

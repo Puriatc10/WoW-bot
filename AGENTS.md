@@ -490,6 +490,29 @@ any Phase 12 artifact.
 After T-FIX-17 merges, this exception is closed. Any future edit to a module that
 STRATEGY A treats as FROZEN requires its own explicit exception recorded in this file.
 
+### 5.20 Bounded exception: T-FIX-18 Aggregate stability summaries
+
+The task T-FIX-18 authorizes a single, bounded exception to STRATEGY A.
+Its sole purpose is to implement cross-session stability summaries in
+`src/wow_bot/analysis/aggregate.py`: aggregating crash trends, RSS trends,
+log trends, and humanizer PIT/KS fits from loaded soak reports and ReportV2
+instances, adding `CrashTrendSummary`, `RSSTrendSummary`, `LogTrendSummary`,
+`HumanizerFitSummary`, `StabilitySummaries`, `aggregate_stability_summaries`,
+and `load_aggregate`, allowing `stability_summaries` on `AggregateReport`,
+and ensuring `report_count=0` is reported distinctly from a populated aggregate
+with zero events distinguishable from "no input reports".
+This is the only file scope of this exception in frozen pre-lab modules:
+`src/wow_bot/analysis/aggregate.py`.
+
+It does NOT authorize modifying the T12.0 scope split or the `NON_CLAIMS` tuple,
+changing existing schema field names/types/defaults in `reporting/schema_v2.py`,
+`analysis/lab_soak_v2.py`, or `analysis/aggregate.py`, modifying or regenerating
+any Phase 12 artifact (including `runs/lab/aggregate-1h/aggregate_v1.json`), or
+documenting percentile proxy semantics (T-FIX-19).
+
+After T-FIX-18 merges, this exception is closed. Any future edit to a module that
+STRATEGY A treats as FROZEN requires its own explicit exception recorded in this file.
+
 
 
 

@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from wow_bot.analysis.lab_soak_v2 import SoakReport, validate_soak_report_dict
+from wow_bot.analysis.lab_timing_v2 import TimingConfig, analyze_intervals
 from wow_bot.reporting.schema_v2 import validate_report_dict
 
 AGGREGATE_SCHEMA_VERSION: int = 1
@@ -257,6 +258,197 @@ class SessionSource:
 
 
 @dataclass(frozen=True)
+class CrashTrendSummary:
+    """Summary of crashes across soak reports.
+
+    When input_report_count == 0, total_crashes and crash_rate are None,
+    distinguishing no soak reports from 0 crashes observed in >= 1 reports.
+    """
+
+    input_report_count: int
+    total_crashes: int | None
+    crash_rate: float | None
+    crash_reasons: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        _check_non_negative_int(self.input_report_count, "input_report_count")
+        if self.total_crashes is not None:
+            _check_non_negative_int(self.total_crashes, "total_crashes")
+        if self.crash_rate is not None:
+            if isinstance(self.crash_rate, bool) or not isinstance(self.crash_rate, (int, float)):
+                raise TypeError(f"crash_rate must be a float or None, got {self.crash_rate!r}")
+            if not (0.0 <= float(self.crash_rate) <= 1.0):
+                raise ValueError(f"crash_rate must be in [0.0, 1.0], got {self.crash_rate}")
+        if not isinstance(self.crash_reasons, tuple):
+            raise TypeError("crash_reasons must be a tuple")
+        for r in self.crash_reasons:
+            if not isinstance(r, str):
+                raise TypeError("crash_reasons elements must be strings")
+
+    def to_json(self) -> dict[str, Any]:
+        return {
+            "input_report_count": self.input_report_count,
+            "total_crashes": self.total_crashes,
+            "crash_rate": self.crash_rate,
+            "crash_reasons": list(self.crash_reasons),
+        }
+
+
+@dataclass(frozen=True)
+class RSSTrendSummary:
+    """Summary of resident memory trends across soak reports.
+
+    When input_report_count == 0, metrics are None.
+    """
+
+    input_report_count: int
+    peak_bytes_max: int | None
+    mean_slope_bytes_per_hour: float | None
+    max_slope_bytes_per_hour: float | None
+    any_growth_suspect: bool | None
+
+    def __post_init__(self) -> None:
+        _check_non_negative_int(self.input_report_count, "input_report_count")
+        if self.peak_bytes_max is not None:
+            _check_non_negative_int(self.peak_bytes_max, "peak_bytes_max")
+        for name in ("mean_slope_bytes_per_hour", "max_slope_bytes_per_hour"):
+            val = getattr(self, name)
+            if val is not None:
+                if isinstance(val, bool) or not isinstance(val, (int, float)):
+                    raise TypeError(f"{name} must be a float or None, got {val!r}")
+                if not math.isfinite(float(val)):
+                    raise ValueError(f"{name} must be finite, got {val}")
+        if self.any_growth_suspect is not None and not isinstance(self.any_growth_suspect, bool):
+            raise TypeError("any_growth_suspect must be a bool or None")
+
+    def to_json(self) -> dict[str, Any]:
+        return {
+            "input_report_count": self.input_report_count,
+            "peak_bytes_max": self.peak_bytes_max,
+            "mean_slope_bytes_per_hour": self.mean_slope_bytes_per_hour,
+            "max_slope_bytes_per_hour": self.max_slope_bytes_per_hour,
+            "any_growth_suspect": self.any_growth_suspect,
+        }
+
+
+@dataclass(frozen=True)
+class LogTrendSummary:
+    """Summary of log growth trends across soak reports.
+
+    When input_report_count == 0, metrics are None.
+    """
+
+    input_report_count: int
+    mean_slope_bytes_per_hour: float | None
+    max_slope_bytes_per_hour: float | None
+    any_growth_suspect: bool | None
+
+    def __post_init__(self) -> None:
+        _check_non_negative_int(self.input_report_count, "input_report_count")
+        for name in ("mean_slope_bytes_per_hour", "max_slope_bytes_per_hour"):
+            val = getattr(self, name)
+            if val is not None:
+                if isinstance(val, bool) or not isinstance(val, (int, float)):
+                    raise TypeError(f"{name} must be a float or None, got {val!r}")
+                if not math.isfinite(float(val)):
+                    raise ValueError(f"{name} must be finite, got {val}")
+        if self.any_growth_suspect is not None and not isinstance(self.any_growth_suspect, bool):
+            raise TypeError("any_growth_suspect must be a bool or None")
+
+    def to_json(self) -> dict[str, Any]:
+        return {
+            "input_report_count": self.input_report_count,
+            "mean_slope_bytes_per_hour": self.mean_slope_bytes_per_hour,
+            "max_slope_bytes_per_hour": self.max_slope_bytes_per_hour,
+            "any_growth_suspect": self.any_growth_suspect,
+        }
+
+
+@dataclass(frozen=True)
+class HumanizerFitSummary:
+    """Summary of humanizer timing distribution fits across reports.
+
+    Status:
+        "no_input_reports": input_report_count == 0
+        "no_interval_samples": input_report_count > 0 but no interval samples
+        "evaluated": PIT/KS goodness-of-fit evaluated
+        "insufficient_samples:<n>": sample count < min_samples threshold
+    """
+
+    input_report_count: int
+    total_samples: int
+    pit_p_value: float | None
+    pit_passes: bool | None
+    ks_statistic: float | None
+    ks_p_value: float | None
+    ks_passes: bool | None
+    status: str
+
+    def __post_init__(self) -> None:
+        _check_non_negative_int(self.input_report_count, "input_report_count")
+        _check_non_negative_int(self.total_samples, "total_samples")
+        if not isinstance(self.status, str) or not self.status:
+            raise ValueError("status must be a non-empty string")
+        for name in ("pit_p_value", "ks_statistic", "ks_p_value"):
+            val = getattr(self, name)
+            if val is not None:
+                if isinstance(val, bool) or not isinstance(val, (int, float)):
+                    raise TypeError(f"{name} must be a float or None, got {val!r}")
+                if not (0.0 <= float(val) <= 1.0):
+                    raise ValueError(f"{name} must be in [0.0, 1.0], got {val}")
+        for name in ("pit_passes", "ks_passes"):
+            val = getattr(self, name)
+            if val is not None and not isinstance(val, bool):
+                raise TypeError(f"{name} must be a bool or None")
+
+    def to_json(self) -> dict[str, Any]:
+        return {
+            "input_report_count": self.input_report_count,
+            "total_samples": self.total_samples,
+            "pit_p_value": self.pit_p_value,
+            "pit_passes": self.pit_passes,
+            "ks_statistic": self.ks_statistic,
+            "ks_p_value": self.ks_p_value,
+            "ks_passes": self.ks_passes,
+            "status": self.status,
+        }
+
+
+@dataclass(frozen=True)
+class StabilitySummaries:
+    """Cross-session stability summaries over soak reports and humanizer series."""
+
+    soak_report_count: int
+    report_v2_count: int
+    crash_trend: CrashTrendSummary
+    rss_trend: RSSTrendSummary
+    log_trend: LogTrendSummary
+    humanizer_fit: HumanizerFitSummary
+
+    def __post_init__(self) -> None:
+        _check_non_negative_int(self.soak_report_count, "soak_report_count")
+        _check_non_negative_int(self.report_v2_count, "report_v2_count")
+        if not isinstance(self.crash_trend, CrashTrendSummary):
+            raise TypeError("crash_trend must be CrashTrendSummary")
+        if not isinstance(self.rss_trend, RSSTrendSummary):
+            raise TypeError("rss_trend must be RSSTrendSummary")
+        if not isinstance(self.log_trend, LogTrendSummary):
+            raise TypeError("log_trend must be LogTrendSummary")
+        if not isinstance(self.humanizer_fit, HumanizerFitSummary):
+            raise TypeError("humanizer_fit must be HumanizerFitSummary")
+
+    def to_json(self) -> dict[str, Any]:
+        return {
+            "soak_report_count": self.soak_report_count,
+            "report_v2_count": self.report_v2_count,
+            "crash_trend": self.crash_trend.to_json(),
+            "rss_trend": self.rss_trend.to_json(),
+            "log_trend": self.log_trend.to_json(),
+            "humanizer_fit": self.humanizer_fit.to_json(),
+        }
+
+
+@dataclass(frozen=True)
 class AggregateReport:
     """Versioned cross-session aggregate report artifact."""
 
@@ -268,6 +460,7 @@ class AggregateReport:
     internal_counters_not_research_findings: InternalCounters
     session_sources: tuple[SessionSource, ...]
     non_claims: tuple[str, ...]
+    stability_summaries: StabilitySummaries | None = None
 
     def __post_init__(self) -> None:
         if self.schema_version != AGGREGATE_SCHEMA_VERSION:
@@ -316,6 +509,13 @@ class AggregateReport:
             if not isinstance(claim, str):
                 raise TypeError("non_claims elements must be strings")
 
+        if self.stability_summaries is not None and not isinstance(
+            self.stability_summaries, StabilitySummaries
+        ):
+            raise TypeError(
+                f"stability_summaries must be a StabilitySummaries instance or None, got {type(self.stability_summaries).__name__}"
+            )
+
     def to_json(self) -> dict[str, Any]:
         """Convert AggregateReport to a JSON-serializable dictionary."""
         out: dict[str, Any] = {
@@ -330,6 +530,8 @@ class AggregateReport:
             "session_sources": [asdict(s) for s in self.session_sources],
             "non_claims": list(self.non_claims),
         }
+        if self.stability_summaries is not None:
+            out["stability_summaries"] = self.stability_summaries.to_json()
         return out
 
 
@@ -677,6 +879,10 @@ def aggregate_sessions(
 
     sorted_session_ids = tuple(sorted({src.session_id for src in session_sources}))
 
+    stability_summaries = aggregate_stability_summaries(
+        loaded_soak_reports, loaded_reports
+    )
+
     return AggregateReport(
         schema_version=AGGREGATE_SCHEMA_VERSION,
         generated_at=generated_at,
@@ -686,7 +892,244 @@ def aggregate_sessions(
         internal_counters_not_research_findings=internal_counters,
         session_sources=tuple(session_sources),
         non_claims=non_claims,
+        stability_summaries=stability_summaries,
     )
+
+
+def aggregate_stability_summaries(
+    soak_reports: Sequence[SoakReport],
+    reports: Sequence[dict[str, Any]],
+    *,
+    timing_config: TimingConfig | None = None,
+) -> StabilitySummaries:
+    """Aggregate crash trends, RSS trends, log trends, and humanizer PIT/KS fits across reports.
+
+    When no soak reports are supplied (input_report_count == 0), crash, RSS, and log trend metrics
+    are None to distinguish absence of soak reports from 0 observed crashes/growth.
+    When no report_v2 reports are supplied, humanizer fit status is 'no_input_reports'.
+    """
+    soak_count = len(soak_reports)
+    if soak_count == 0:
+        crash_trend = CrashTrendSummary(
+            input_report_count=0,
+            total_crashes=None,
+            crash_rate=None,
+            crash_reasons=(),
+        )
+        rss_trend = RSSTrendSummary(
+            input_report_count=0,
+            peak_bytes_max=None,
+            mean_slope_bytes_per_hour=None,
+            max_slope_bytes_per_hour=None,
+            any_growth_suspect=None,
+        )
+        log_trend = LogTrendSummary(
+            input_report_count=0,
+            mean_slope_bytes_per_hour=None,
+            max_slope_bytes_per_hour=None,
+            any_growth_suspect=None,
+        )
+    else:
+        # Sort soak reports by session_id for determinism
+        sorted_soaks = sorted(soak_reports, key=lambda s: s.session_id)
+        crashes = [s for s in sorted_soaks if s.crash]
+        total_crashes = len(crashes)
+        crash_rate = float(total_crashes / soak_count)
+        crash_reasons = tuple(sorted({s.crash_reason for s in crashes if s.crash_reason}))
+        crash_trend = CrashTrendSummary(
+            input_report_count=soak_count,
+            total_crashes=total_crashes,
+            crash_rate=crash_rate,
+            crash_reasons=crash_reasons,
+        )
+
+        rss_peaks = [s.summary.rss_peak_bytes for s in sorted_soaks]
+        rss_slopes = [s.summary.rss_slope_bytes_per_hour for s in sorted_soaks]
+        rss_suspects = [s.summary.rss_growth_suspect for s in sorted_soaks]
+        rss_trend = RSSTrendSummary(
+            input_report_count=soak_count,
+            peak_bytes_max=max(rss_peaks),
+            mean_slope_bytes_per_hour=float(sum(rss_slopes) / soak_count),
+            max_slope_bytes_per_hour=max(rss_slopes),
+            any_growth_suspect=any(rss_suspects),
+        )
+
+        log_slopes = [s.summary.log_slope_bytes_per_hour for s in sorted_soaks]
+        log_suspects = [s.summary.log_growth_suspect for s in sorted_soaks]
+        log_trend = LogTrendSummary(
+            input_report_count=soak_count,
+            mean_slope_bytes_per_hour=float(sum(log_slopes) / soak_count),
+            max_slope_bytes_per_hour=max(log_slopes),
+            any_growth_suspect=any(log_suspects),
+        )
+
+    report_count = len(reports)
+    all_intervals: list[float] = []
+    # Sort reports by session_id if available for determinism
+    sorted_reports = sorted(
+        reports,
+        key=lambda r: str(r.get("meta", {}).get("session_id", ""))
+        if isinstance(r.get("meta"), dict)
+        else "",
+    )
+    for rep in sorted_reports:
+        hum = rep.get("humanizer")
+        if isinstance(hum, dict):
+            samples = hum.get("interval_samples_ms")
+            if isinstance(samples, (list, tuple)):
+                for s in samples:
+                    if isinstance(s, (int, float)) and not isinstance(s, bool):
+                        all_intervals.append(float(s))
+
+    if report_count == 0:
+        humanizer_fit = HumanizerFitSummary(
+            input_report_count=0,
+            total_samples=0,
+            pit_p_value=None,
+            pit_passes=None,
+            ks_statistic=None,
+            ks_p_value=None,
+            ks_passes=None,
+            status="no_input_reports",
+        )
+    elif len(all_intervals) == 0:
+        humanizer_fit = HumanizerFitSummary(
+            input_report_count=report_count,
+            total_samples=0,
+            pit_p_value=None,
+            pit_passes=None,
+            ks_statistic=None,
+            ks_p_value=None,
+            ks_passes=None,
+            status="no_interval_samples",
+        )
+    else:
+        timing_res = analyze_intervals(all_intervals, config=timing_config)
+        if timing_res.skipped:
+            humanizer_fit = HumanizerFitSummary(
+                input_report_count=report_count,
+                total_samples=len(all_intervals),
+                pit_p_value=None,
+                pit_passes=False,
+                ks_statistic=None,
+                ks_p_value=None,
+                ks_passes=False,
+                status=timing_res.reason or "insufficient_samples",
+            )
+        else:
+            humanizer_fit = HumanizerFitSummary(
+                input_report_count=report_count,
+                total_samples=len(all_intervals),
+                pit_p_value=timing_res.pit_p_value,
+                pit_passes=timing_res.pit_passes,
+                ks_statistic=timing_res.ks_statistic,
+                ks_p_value=timing_res.ks_p_value,
+                ks_passes=timing_res.ks_passes,
+                status="evaluated",
+            )
+
+    return StabilitySummaries(
+        soak_report_count=soak_count,
+        report_v2_count=report_count,
+        crash_trend=crash_trend,
+        rss_trend=rss_trend,
+        log_trend=log_trend,
+        humanizer_fit=humanizer_fit,
+    )
+
+
+def load_aggregate(path: Path) -> AggregateReport:
+    """Read path as UTF-8 JSON and parse into a validated AggregateReport instance.
+
+    Raises:
+        AggregateError: On missing file, invalid JSON, or schema validation failure.
+    """
+    p = Path(path)
+    if not p.exists():
+        raise AggregateError(f"Aggregate report file does not exist: {p}")
+
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+    except Exception as exc:
+        raise AggregateError(f"Failed to parse JSON from aggregate report {p}: {exc}") from exc
+
+    if not isinstance(data, dict):
+        raise AggregateError(f"Invalid aggregate structure in {p}: expected JSON object")
+
+    if data.get("schema_version") != AGGREGATE_SCHEMA_VERSION:
+        raise AggregateError(
+            f"Unsupported aggregate schema_version in {p}: {data.get('schema_version')}"
+        )
+
+    try:
+        pa_dict = data["perception_agnostic"]
+        perception_agnostic = PerceptionAgnosticMetrics(**pa_dict)
+
+        ic_dict = data["internal_counters_not_research_findings"]
+        internal_counters = InternalCounters(**ic_dict)
+
+        session_sources = tuple(
+            SessionSource(**src) for src in data.get("session_sources", ())
+        )
+
+        stability_summaries: StabilitySummaries | None = None
+        if "stability_summaries" in data and data["stability_summaries"] is not None:
+            ss_data = data["stability_summaries"]
+            crash_data = ss_data["crash_trend"]
+            crash_trend = CrashTrendSummary(
+                input_report_count=crash_data["input_report_count"],
+                total_crashes=crash_data.get("total_crashes"),
+                crash_rate=crash_data.get("crash_rate"),
+                crash_reasons=tuple(crash_data.get("crash_reasons", ())),
+            )
+            rss_data = ss_data["rss_trend"]
+            rss_trend = RSSTrendSummary(
+                input_report_count=rss_data["input_report_count"],
+                peak_bytes_max=rss_data.get("peak_bytes_max"),
+                mean_slope_bytes_per_hour=rss_data.get("mean_slope_bytes_per_hour"),
+                max_slope_bytes_per_hour=rss_data.get("max_slope_bytes_per_hour"),
+                any_growth_suspect=rss_data.get("any_growth_suspect"),
+            )
+            log_data = ss_data["log_trend"]
+            log_trend = LogTrendSummary(
+                input_report_count=log_data["input_report_count"],
+                mean_slope_bytes_per_hour=log_data.get("mean_slope_bytes_per_hour"),
+                max_slope_bytes_per_hour=log_data.get("max_slope_bytes_per_hour"),
+                any_growth_suspect=log_data.get("any_growth_suspect"),
+            )
+            hum_data = ss_data["humanizer_fit"]
+            humanizer_fit = HumanizerFitSummary(
+                input_report_count=hum_data["input_report_count"],
+                total_samples=hum_data["total_samples"],
+                pit_p_value=hum_data.get("pit_p_value"),
+                pit_passes=hum_data.get("pit_passes"),
+                ks_statistic=hum_data.get("ks_statistic"),
+                ks_p_value=hum_data.get("ks_p_value"),
+                ks_passes=hum_data.get("ks_passes"),
+                status=hum_data.get("status", "evaluated"),
+            )
+            stability_summaries = StabilitySummaries(
+                soak_report_count=ss_data.get("soak_report_count", 0),
+                report_v2_count=ss_data.get("report_v2_count", 0),
+                crash_trend=crash_trend,
+                rss_trend=rss_trend,
+                log_trend=log_trend,
+                humanizer_fit=humanizer_fit,
+            )
+
+        return AggregateReport(
+            schema_version=data["schema_version"],
+            generated_at=data["generated_at"],
+            session_ids=tuple(data.get("session_ids", ())),
+            session_count=data["session_count"],
+            perception_agnostic=perception_agnostic,
+            internal_counters_not_research_findings=internal_counters,
+            session_sources=session_sources,
+            non_claims=tuple(data.get("non_claims", ())),
+            stability_summaries=stability_summaries,
+        )
+    except Exception as exc:
+        raise AggregateError(f"Failed to construct AggregateReport from dict for {p}: {exc}") from exc
 
 
 def write_aggregate(report: AggregateReport, path: Path) -> None:
@@ -732,10 +1175,17 @@ __all__ = [
     "AggregateConfig",
     "AggregateError",
     "AggregateReport",
+    "CrashTrendSummary",
+    "HumanizerFitSummary",
     "InternalCounters",
+    "LogTrendSummary",
     "PerceptionAgnosticMetrics",
+    "RSSTrendSummary",
     "SessionSource",
+    "StabilitySummaries",
     "aggregate_sessions",
+    "aggregate_stability_summaries",
+    "load_aggregate",
     "load_report_v2",
     "load_soak_report",
     "run_aggregate",
