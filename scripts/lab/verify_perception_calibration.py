@@ -5,12 +5,18 @@ Verifies:
 1. Perception Python dependencies (mss, cv2, pytesseract, numpy).
 2. Tesseract OCR binary availability and OCR test execution.
 3. Template PNG image assets under models/.
-4. Screen capture device connectivity, monitor resolution, and test grab.
-5. ROI boundary validity against grabbed screen/window geometry.
-6. Target game window existence via FocusBackend (optional).
+4. Detector / model assets (YOLO weights) when enabled.
+5. Configuration path resolution from chosen perception config location.
+6. ROI boundary validity against calibrated resolution and screen geometry.
+7. Capture region specification validity.
+8. Screen capture device connectivity and test grab.
+9. Target WoW game window existence via focus backend.
+10. Live perception channels calibration requirements.
 
-Run before starting the game client and live bot execution:
-    python scripts/lab/verify_perception_calibration.py
+Clearly distinguishes:
+- PASS: Validated and ready.
+- FAIL: Blocking failures that prevent execution (exits with code 1).
+- NEEDS_LIVE_CALIBRATION: Non-blocking items requiring live game client / in-game frame.
 """
 
 from __future__ import annotations
@@ -56,13 +62,16 @@ def check_dependencies() -> dict[str, tuple[bool, str]]:
 
         results["ultralytics (optional YOLO)"] = (True, f"version {ultralytics.__version__}")
     except ImportError:
-        results["ultralytics (optional YOLO)"] = (True, "Not installed (optional for template-based fallback)")
+        results["ultralytics (optional YOLO)"] = (
+            True,
+            "Not installed (optional; template-based fallback active)",
+        )
 
     return results
 
 
-def check_tesseract_binary(tesseract_cmd: str | None) -> tuple[bool, str]:
-    """Check that Tesseract OCR binary exists and runs."""
+def check_tesseract_binary(tesseract_cmd: str | None) -> tuple[str, str]:
+    """Check that Tesseract OCR binary exists and executes self-test."""
     import shutil
 
     cmd = tesseract_cmd or r"C:\Program Files\Tesseract-OCR\tesseract.exe"
@@ -75,29 +84,31 @@ def check_tesseract_binary(tesseract_cmd: str | None) -> tuple[bool, str]:
             path = Path(which)
         else:
             return (
-                False,
+                "FAIL",
                 f"Binary not found at '{cmd}'. On Windows: winget install UB-Mannheim.TesseractOCR or download from GitHub.",
             )
 
     try:
+        import cv2
         import pytesseract
 
-        # Create a small synthetic image with digits '123' to test OCR execution
         test_img = np.ones((50, 150), dtype=np.uint8) * 255
-        import cv2
-
         cv2.putText(test_img, "123", (20, 35), cv2.FONT_HERSHEY_SIMPLEX, 1.0, 0, 2)
 
         pytesseract.pytesseract.tesseract_cmd = str(path)
-        text = pytesseract.image_to_string(test_img, config="--psm 7 -c tessedit_char_whitelist=0123456789")
+        text = pytesseract.image_to_string(
+            test_img, config="--psm 7 -c tessedit_char_whitelist=0123456789"
+        )
         if "123" in text.strip():
-            return True, f"Found and verified at {path} (OCR self-test passed)"
-        return True, f"Found at {path} (self-test returned: '{text.strip()}')"
+            return "PASS", f"Found and verified at {path} (OCR self-test passed)"
+        return "PASS", f"Found at {path} (self-test returned: '{text.strip()}')"
     except Exception as exc:  # noqa: BLE001
-        return False, f"Failed executing Tesseract at '{cmd}': {exc}"
+        return "FAIL", f"Failed executing Tesseract at '{cmd}': {exc}"
 
 
-def check_template_assets(base_dir: Path, template_paths: list[str]) -> dict[str, tuple[bool, str]]:
+def check_template_assets(
+    base_dir: Path, template_paths: list[str]
+) -> dict[str, tuple[bool, str]]:
     """Check existence of template image assets."""
     results: dict[str, tuple[bool, str]] = {}
     for rel_path in template_paths:
@@ -114,10 +125,63 @@ def check_template_assets(base_dir: Path, template_paths: list[str]) -> dict[str
     return results
 
 
+def check_detector_assets(
+    base_dir: Path,
+    yolo_weights: str | None,
+    yolo_enabled: bool = True,
+) -> tuple[str, str]:
+    """Check detector/model assets if configured."""
+    if not yolo_weights:
+        return "PASS", "YOLO detector not configured (template-based target reader active)"
+    p = base_dir / yolo_weights
+    if not p.exists():
+        p = base_dir.parent / yolo_weights
+    if not p.exists():
+        p = Path(yolo_weights)
+    if p.exists() and p.is_file():
+        return "PASS", f"Found detector weights at {p} ({p.stat().st_size} bytes)"
+    if yolo_enabled:
+        return "FAIL", f"Configured YOLO weights missing at {p}"
+    return (
+        "PASS",
+        f"YOLO weights not present at {p}; template-based target reader active (optional)",
+    )
+
+
+def parse_and_validate_capture_region(
+    region_str: str | None,
+) -> tuple[str, str, tuple[int, int, int, int] | None]:
+    """Parse and validate optional capture region string."""
+    if region_str is None:
+        return "PASS", "Full monitor capture (no capture_region override)", None
+    try:
+        parts = [int(p.strip()) for p in region_str.split(",")]
+        if len(parts) != 4:
+            return (
+                "FAIL",
+                f"capture_region must have 4 integers 'left,top,width,height' (got {len(parts)})",
+                None,
+            )
+        left, top, width, height = parts
+        if left < 0 or top < 0 or width <= 0 or height <= 0:
+            return (
+                "FAIL",
+                f"capture_region coordinates must be non-negative and sizes > 0: ({left}, {top}, {width}, {height})",
+                None,
+            )
+        return (
+            "PASS",
+            f"Valid capture region: left={left}, top={top}, width={width}, height={height}",
+            (left, top, width, height),
+        )
+    except Exception as exc:  # noqa: BLE001
+        return "FAIL", f"Malformed capture_region '{region_str}': {exc}", None
+
+
 def check_screen_capture(
     monitor_idx: int = 1,
     region: tuple[int, int, int, int] | None = None,
-) -> tuple[bool, str, np.ndarray | None]:
+) -> tuple[str, str, np.ndarray | None]:
     """Check screen capture device and grab one test frame."""
     try:
         from wow_bot.perception.capture import ScreenCapture
@@ -125,21 +189,24 @@ def check_screen_capture(
         cap = ScreenCapture(monitor_idx=monitor_idx, region=region)
         frame = cap.grab()
         if frame is None:
-            return False, "ScreenCapture returned None frame", None
+            return "FAIL", "ScreenCapture returned None frame", None
         h, w = frame.shape[:2]
-        return True, f"Successfully grabbed test frame: {w}x{h} px (monitor {monitor_idx})", frame
+        return "PASS", f"Successfully grabbed test frame: {w}x{h} px (monitor {monitor_idx})", frame
     except Exception as exc:  # noqa: BLE001
-        return False, f"ScreenCapture error: {exc}", None
+        return "FAIL", f"ScreenCapture error: {exc}", None
 
 
-def check_rois_fit(frame_shape: tuple[int, int], perception_config_path: Path) -> list[tuple[str, bool, str]]:
-    """Check that all configured ROIs fit within the captured frame geometry."""
+def check_rois_validity(
+    perception_config_path: Path,
+    frame_shape: tuple[int, int] | None = None,
+) -> list[tuple[str, str, str]]:
+    """Check mathematical validity and frame boundaries for all configured ROIs."""
     from wow_bot.perception.perception_config import load_perception_config
 
     cfg = load_perception_config(perception_config_path)
-    fh, fw = frame_shape
+    cal_w, cal_h = cfg.calibrated_resolution
 
-    checks: list[tuple[str, bool, str]] = []
+    checks: list[tuple[str, str, str]] = []
 
     bag_w = cfg.bag_columns * (cfg.bag_slot_size[0] + cfg.bag_gap)
     bag_h = cfg.bag_rows * (cfg.bag_slot_size[1] + cfg.bag_gap)
@@ -165,21 +232,46 @@ def check_rois_fit(frame_shape: tuple[int, int], perception_config_path: Path) -
 
     for name, (x, y, w, h) in rois:
         if x < 0 or y < 0 or w <= 0 or h <= 0:
-            checks.append((name, False, f"Invalid dimensions: ({x}, {y}, {w}, {h})"))
-        elif (x + w) > fw or (y + h) > fh:
+            checks.append((name, "FAIL", f"Invalid dimensions: ({x}, {y}, {w}, {h})"))
+        elif (x + w) > cal_w or (y + h) > cal_h:
             checks.append(
-                (name, False, f"ROI ({x}+{w}={x+w}, {y}+{h}={y+h}) exceeds frame bounds ({fw}x{fh})")
+                (
+                    name,
+                    "FAIL",
+                    f"ROI ({x}+{w}={x+w}, {y}+{h}={y+h}) exceeds calibrated resolution ({cal_w}x{cal_h})",
+                )
             )
+        elif frame_shape is not None:
+            fh, fw = frame_shape
+            if (x + w) > fw or (y + h) > fh:
+                checks.append(
+                    (
+                        name,
+                        "FAIL",
+                        f"ROI ({x}+{w}={x+w}, {y}+{h}={y+h}) exceeds captured frame ({fw}x{fh})",
+                    )
+                )
+            else:
+                checks.append((name, "PASS", f"Valid and fits frame: ({x}, {y}, {w}, {h})"))
         else:
-            checks.append((name, True, f"Fits within frame: ({x}, {y}, {w}, {h})"))
+            checks.append((name, "PASS", f"Valid dimensions: ({x}, {y}, {w}, {h})"))
 
     return checks
 
 
-def check_game_window(window_title: str) -> tuple[bool, str]:
-    """Check if the target game window is present (Windows only)."""
+def check_rois_fit(
+    frame_shape: tuple[int, int],
+    perception_config_path: Path,
+) -> list[tuple[str, bool, str]]:
+    """Check that all configured ROIs fit within the captured frame geometry."""
+    checks = check_rois_validity(perception_config_path, frame_shape=frame_shape)
+    return [(name, status == "PASS", detail) for name, status, detail in checks]
+
+
+def check_game_window(window_title: str) -> tuple[str, str]:
+    """Check if target game window exists on desktop (Windows only)."""
     if sys.platform != "win32":
-        return True, "Skipped (non-Windows platform)"
+        return "PASS", "Skipped window check (non-Windows platform)"
     try:
         from wow_bot.actuation.backends.focus_win32 import Win32FocusBackend
 
@@ -187,10 +279,44 @@ def check_game_window(window_title: str) -> tuple[bool, str]:
         hwnd = fb.find_window(window_title)
         fb.close()
         if hwnd is not None:
-            return True, f"Found window matching '{window_title}' (HWND: {hwnd})"
-        return False, f"Window matching '{window_title}' not currently found on desktop"
+            return "PASS", f"Found window matching '{window_title}' (HWND: {hwnd})"
+        return (
+            "NEEDS_LIVE_CALIBRATION",
+            f"Window matching '{window_title}' not currently found on desktop. Game client must be running before live launch.",
+        )
     except Exception as exc:  # noqa: BLE001
-        return False, f"Error searching for window: {exc}"
+        return "FAIL", f"Error searching for game window: {exc}"
+
+
+def check_live_channels() -> list[tuple[str, str, str]]:
+    """List perception channels that require an active game frame for live calibration."""
+    return [
+        (
+            "bars (HP/Mana)",
+            "NEEDS_LIVE_CALIBRATION",
+            "HP and Mana bar pixel ratios require an active player character rendered in-game.",
+        ),
+        (
+            "target (Name & Frame)",
+            "NEEDS_LIVE_CALIBRATION",
+            "Target nameplate OCR and target frame matching require an active target selected in-game.",
+        ),
+        (
+            "pose (Addon Coordinates)",
+            "NEEDS_LIVE_CALIBRATION",
+            "Coordinate frame OCR requires coordinate display addon rendered at coordinate_roi.",
+        ),
+        (
+            "reaction (Nameplate Color)",
+            "NEEDS_LIVE_CALIBRATION",
+            "Nameplate color classification requires hostile/neutral target nameplate visible on screen.",
+        ),
+        (
+            "panels (Bag / Durability / XP)",
+            "NEEDS_LIVE_CALIBRATION",
+            "Bag and durability reading require game inventory/character panels opened in-game.",
+        ),
+    ]
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -222,25 +348,40 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=None,
         help="Optional capture region as 'left,top,width,height'.",
     )
+    parser.add_argument(
+        "--require-yolo",
+        action="store_true",
+        default=False,
+        help="Enforce that YOLO weights exist (default: optional with template fallback).",
+    )
     return parser.parse_args(argv)
 
 
 def run_verification(args: argparse.Namespace) -> int:
-    """Run all verification checks and print report."""
-    print("=" * 70)
-    print("  WoW-bot Phase 13 Real Perception Pre-Flight & Calibration Check")
-    print("=" * 70)
+    """Run all verification checks and print structured report."""
+    print("=" * 72)
+    print("  WoW-bot Phase 13 Real Perception Pre-Flight & Calibration Gate")
+    print("=" * 72)
 
-    all_passed = True
+    passes: list[tuple[str, str]] = []
+    failures: list[tuple[str, str]] = []
+    needs_calibration: list[tuple[str, str]] = []
+
+    def record(name: str, status: str, detail: str) -> None:
+        if status == "PASS":
+            passes.append((name, detail))
+        elif status == "FAIL":
+            failures.append((name, detail))
+        else:
+            needs_calibration.append((name, detail))
+        print(f"  [{status:<22}] {name:<28}: {detail}")
 
     # 1. Python dependencies
     print("\n[1] Checking Python Dependencies:")
     deps = check_dependencies()
     for name, (ok, detail) in deps.items():
         status = "PASS" if ok else "FAIL"
-        print(f"  [{status}] {name:<26}: {detail}")
-        if not ok:
-            all_passed = False
+        record(name, status, detail)
 
     # 2. Perception config
     p_cfg_path = args.perception_config
@@ -252,28 +393,33 @@ def run_verification(args: argparse.Namespace) -> int:
 
     print(f"\n[2] Loading Perception Configuration: {p_cfg_path}")
     if not p_cfg_path.exists():
-        print(f"  [FAIL] Perception configuration not found at {p_cfg_path}")
+        record(
+            "config_file",
+            "FAIL",
+            f"Perception configuration not found at {p_cfg_path}",
+        )
         return 1
 
     from wow_bot.perception.perception_config import load_perception_config
 
     try:
         cfg = load_perception_config(p_cfg_path)
-        print("  [PASS] Configuration syntax and values validated successfully.")
+        record(
+            "config_syntax",
+            "PASS",
+            f"Validated perception config (calibrated: {cfg.calibrated_resolution[0]}x{cfg.calibrated_resolution[1]})",
+        )
     except Exception as exc:  # noqa: BLE001
-        print(f"  [FAIL] Configuration validation error: {exc}")
+        record("config_syntax", "FAIL", f"Configuration validation error: {exc}")
         return 1
 
     # 3. Tesseract OCR
-    print("\n[3] Checking Tesseract OCR:")
-    tess_ok, tess_detail = check_tesseract_binary(cfg.tesseract_cmd)
-    tess_status = "PASS" if tess_ok else "FAIL"
-    print(f"  [{tess_status}] {tess_detail}")
-    if not tess_ok:
-        all_passed = False
+    print("\n[3] Checking Tesseract OCR Engine:")
+    tess_status, tess_detail = check_tesseract_binary(cfg.tesseract_cmd)
+    record("tesseract_engine", tess_status, tess_detail)
 
-    # 4. Template assets
-    print("\n[4] Checking Template Assets:")
+    # 4. Template & Model Assets
+    print("\n[4] Checking Template & Model Assets:")
     template_paths = [
         cfg.target_name_template,
         cfg.target_frame_template,
@@ -282,49 +428,71 @@ def run_verification(args: argparse.Namespace) -> int:
     assets = check_template_assets(p_cfg_path.parent, template_paths)
     for asset, (ok, detail) in assets.items():
         status = "PASS" if ok else "FAIL"
-        print(f"  [{status}] {asset:<30}: {detail}")
-        if not ok:
-            all_passed = False
+        record(asset, status, detail)
 
-    # 5. Screen Capture & Frame geometry
-    print("\n[5] Checking Screen Capture Device:")
-    cap_region = None
-    if args.capture_region:
-        parts = [int(p.strip()) for p in args.capture_region.split(",")]
-        cap_region = (parts[0], parts[1], parts[2], parts[3])
+    det_status, det_detail = check_detector_assets(
+        p_cfg_path.parent,
+        cfg.yolo_weights,
+        yolo_enabled=bool(args.require_yolo),
+    )
+    record("detector_weights", det_status, det_detail)
 
-    cap_ok, cap_detail, frame = check_screen_capture(
+    # 5. Capture Region & Screen Capture Device
+    print("\n[5] Checking Screen Capture & Geometry:")
+    reg_status, reg_detail, cap_region = parse_and_validate_capture_region(
+        args.capture_region
+    )
+    record("capture_region", reg_status, reg_detail)
+
+    cap_status, cap_detail, frame = check_screen_capture(
         monitor_idx=args.monitor_idx,
         region=cap_region,
     )
-    cap_status = "PASS" if cap_ok else "FAIL"
-    print(f"  [{cap_status}] {cap_detail}")
-    if not cap_ok or frame is None:
-        all_passed = False
-    else:
-        # 6. ROI Bounds Check
-        print("\n[6] Checking ROI Calibration against Screen Geometry:")
-        roi_checks = check_rois_fit(frame.shape[:2], p_cfg_path)
-        for name, ok, detail in roi_checks:
-            status = "PASS" if ok else "WARN"
-            print(f"  [{status}] {name:<26}: {detail}")
-            if not ok:
-                all_passed = False
+    record("screen_capture", cap_status, cap_detail)
+
+    # 6. ROI Bounds Check
+    print("\n[6] Checking ROI Calibration Bounds:")
+    frame_shape = frame.shape[:2] if frame is not None else None
+    roi_checks = check_rois_validity(p_cfg_path, frame_shape=frame_shape)
+    for name, status, detail in roi_checks:
+        record(name, status, detail)
 
     # 7. Game Window Check
-    print(f"\n[7] Checking Game Window ('{args.window_title}'):")
-    win_ok, win_detail = check_game_window(args.window_title)
-    win_status = "PASS" if win_ok else "INFO"
-    print(f"  [{win_status}] {win_detail}")
+    print(f"\n[7] Checking Target Game Window ('{args.window_title}'):")
+    win_status, win_detail = check_game_window(args.window_title)
+    record("game_window", win_status, win_detail)
 
-    print("\n" + "=" * 70)
-    if all_passed:
-        print("  RESULT: PRE-FLIGHT CHECKS PASSED. Ready to run game client.")
+    # 8. Live In-Game Channels
+    print("\n[8] In-Game Perception Channels Calibration Status:")
+    for name, status, detail in check_live_channels():
+        record(name, status, detail)
+
+    # Summary
+    print("\n" + "=" * 72)
+    print("  PRE-FLIGHT GATE SUMMARY")
+    print("=" * 72)
+    print(f"  PASS                  : {len(passes)}")
+    print(f"  FAIL (blocking)       : {len(failures)}")
+    print(f"  NEEDS_LIVE_CALIBRATION: {len(needs_calibration)}")
+    print("-" * 72)
+
+    if failures:
+        print("  GATE OUTCOME: FAILED. Blocking issues must be resolved:")
+        for name, detail in failures:
+            print(f"    - {name}: {detail}")
+        print("=" * 72)
+        return 1
+
+    if needs_calibration:
+        print("  GATE OUTCOME: PASSED (Live calibration required before activation).")
+        print("  The following items require the game client to be running in-game:")
+        for name, detail in needs_calibration:
+            print(f"    * {name}: {detail}")
     else:
-        print("  RESULT: SOME CHECKS REQUIRE ATTENTION before live execution.")
-    print("=" * 70)
+        print("  GATE OUTCOME: ALL CHECKS PASSED.")
+    print("=" * 72)
 
-    return 0 if all_passed else 1
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:

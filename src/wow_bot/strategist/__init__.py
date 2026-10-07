@@ -25,6 +25,7 @@ from wow_bot.strategist.prompts import (
 from wow_bot.strategist.prompts_v2 import (
     ALLOWED_GOALS,
     GameStateView,
+    LabMetaStateAdapter,
     MetaStateLike,
     PromptBundle,
     PromptConfig,
@@ -57,6 +58,7 @@ __all__ = [
     "GameStateView",
     "GoalRule",
     "JsonStrategy",
+    "LabMetaStateAdapter",
     "LlmClient",
     "MetaStateLike",
     "OrchestratorConfig",

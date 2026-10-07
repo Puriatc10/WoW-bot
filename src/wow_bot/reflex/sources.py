@@ -222,15 +222,12 @@ REGISTERED_SIGNAL_SOURCE_CLASSES: tuple[type, ...] = (
 
 def enumerate_registered_signal_types() -> set[str]:
     """Enumerate all signal types produced by registered sources across the system."""
-    from wow_bot.combat.reactive import ReactiveCombat
-    from wow_bot.reflex.stuck import PositionStuckSignalSource
-
     types: set[str] = {
-        PositionStuckSignalSource.NAME_STUCK,
-        PositionStuckSignalSource.NAME_CLEAR,
-        ReactiveCombat.name_interrupt(),
-        ReactiveCombat.name_defensive(),
-        ReactiveCombat.name_retreat(),
+        "position_stuck",
+        "position_clear",
+        "combat_interrupt",
+        "combat_defensive",
+        "combat_retreat",
     }
     for cls in REGISTERED_SIGNAL_SOURCE_CLASSES:
         if hasattr(cls, "PRODUCED_SIGNAL_TYPES"):

@@ -574,10 +574,30 @@ It does NOT authorize navigation algorithm changes (T-FIX-15/17), profile schema
 changes beyond additive, modifying `SafetyLayer`, `Session`, or `Config`,
 modifying the `GameState` schema, or modifying any Phase 12 artifact.
 
-After T-FIX-26 merges, this exception is closed. Any future edit to a module that
+### 5.24 Bounded exception: T-LIVE-PRE-01 Live LAB integration and safety blockers
+
+The task T-LIVE-PRE-01 authorizes a single, bounded exception to STRATEGY A.
+Its sole purpose is to eliminate runtime and safety blockers in the LAB live execution path:
+wiring `Win32FocusBackend` into the Windows LAB live runner while keeping `NullFocusBackend`
+injected for MOCK/tests, failing closed if the game window cannot be found or focus cannot be
+established, wiring `KillSwitch` (`PynputBackend`) into the LAB live runtime using `config.kill_switch_key`
+to immediately trigger `SafetyLayer` abort on trigger, starting and stopping `FocusManager` and
+`KillSwitch` on runtime lifecycle transitions, adding `LabMetaStateAdapter` for `live_soak.py`
+to prevent `PROMPT_BUILD_ERROR` during planning, aligning rotation configuration loading to TOML
+in `run_farm_v2.py`, removing cross-layer imports in `reflex/sources.py`, and upgrading
+`verify_perception_calibration.py` to a real pre-flight gate distinguishing PASS, FAIL, and
+NEEDS_LIVE_CALIBRATION.
+This is the only file scope of this exception:
+`src/wow_bot/lab/runner_v2.py`, `src/wow_bot/strategist/prompts_v2.py`, `src/wow_bot/strategist/__init__.py`,
+`scripts/lab/live_soak.py`, `scripts/lab/run_farm_v2.py`, `scripts/lab/verify_perception_calibration.py`,
+and `src/wow_bot/reflex/sources.py`.
+
+It does NOT authorize changing the `GameState` schema, modifying `SafetyLayer` semantics, modifying
+`Session` or `Config`, adding anti-cheat bypasses, DLL injection, memory editing, retail/third-party
+server connections, or changing safe defaults in `config/lab.toml`.
+
+After T-LIVE-PRE-01 merges, this exception is closed. Any future edit to a module that
 STRATEGY A treats as FROZEN requires its own explicit exception recorded in this file.
-
-
 
 ### 5.2 Source of Tasks
 

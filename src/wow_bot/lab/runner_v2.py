@@ -24,6 +24,7 @@ import contextlib
 import json
 import math
 import random
+import sys
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -33,6 +34,7 @@ from typing import Any
 
 from wow_bot.actuation.actuator import make_actuator
 from wow_bot.actuation.backends.focus_null import NullFocusBackend
+from wow_bot.actuation.backends.focus_win32 import Win32FocusBackend
 from wow_bot.actuation.driver import make_driver
 from wow_bot.actuation.focus import FocusManager
 from wow_bot.actuation.humanized import HumanizedActuator, HumanizerConfig
@@ -64,6 +66,7 @@ from wow_bot.farm.vendor import (
     VendorStatus,
     resolve_vendor_node,
 )
+from wow_bot.kill_switch import KillSwitch
 from wow_bot.mode import enter_mode
 from wow_bot.nav.graph import GraphConfig, NavGraph, NodeKind, build_graph
 from wow_bot.nav.navigator import NavConfig, Navigator, NavStatus, SimpleReplanner
@@ -235,12 +238,17 @@ class LabRuntime:
     telemetry_config: TelemetryConfig
     session_events_total: int
     perception_port: PerceptionPort | None = None
+    kill_switch: KillSwitch | None = None
 
     async def close(self) -> None:
         """Close and reap all managed runtime resources."""
         with contextlib.suppress(Exception):
             self.driver.release_all()
         self.safety.disarm()
+        if self.kill_switch is not None:
+            self.kill_switch.stop()
+        if self.focus is not None:
+            self.focus.stop()
         if self.perception_port is not None:
             self.perception_port.stop_pump()
         if self.reflex_loop is not None and self.reflex_loop.is_running():
@@ -249,6 +257,7 @@ class LabRuntime:
             self.watchdog.close()
         if hasattr(self.world, "close"):
             await self.world.close()
+            await asyncio.sleep(0)
 
 
 @dataclass(frozen=True)
@@ -584,6 +593,9 @@ async def build_lab_runtime_async(
     reflex_loop: ReflexLoop | None = None,
     watchdog: WatchdogProcess | None = None,
     focus_backend: object | None = None,
+    kill_switch_backend: object | None = None,
+    kill_switch: KillSwitch | None = None,
+    live_mode: bool = False,
     llm_client: object | None = None,
 ) -> LabRuntime:
     """Asynchronously construct and wire all LAB mode runtime infrastructure components."""
@@ -678,10 +690,58 @@ async def build_lab_runtime_async(
     else:
         slp = _CancellableSleep(safety=safety, base_sleep=time.sleep)
 
+    is_live = bool(
+        live_mode or (driver_name != "null")
+    )
+
     driver = make_driver(driver_name, lab_mode=True)
     safety.register_kill_switch(driver.release_all)
-    backend = focus_backend if focus_backend is not None else NullFocusBackend()
-    focus = FocusManager(window_title, backend=backend)  # type: ignore[arg-type]
+
+    # Focus backend selection and validation
+    backend: object
+    if focus_backend is not None:
+        backend = focus_backend
+    elif is_live:
+        if sys.platform == "win32":
+            backend = Win32FocusBackend()
+        else:
+            safety.disarm()
+            raise LabRunnerError("Live Windows focus backend is only supported on Windows")
+    else:
+        backend = NullFocusBackend()
+
+    try:
+        focus = FocusManager(window_title, backend=backend)  # type: ignore[arg-type]
+    except Exception as exc:
+        safety.disarm()
+        raise LabRunnerError(f"Failed to initialize focus manager: {exc}") from exc
+
+    ks_key = str(getattr(config, "kill_switch_key", "F12"))
+
+    def _on_kill_switch_triggered() -> None:
+        safety.abort("kill_switch_triggered")
+
+    actual_kill_switch: KillSwitch
+    if kill_switch is not None:
+        actual_kill_switch = kill_switch
+    elif kill_switch_backend is not None:
+        actual_kill_switch = KillSwitch(
+            key=ks_key,
+            on_trigger=_on_kill_switch_triggered,
+            backend=kill_switch_backend,  # type: ignore[arg-type]
+        )
+    elif is_live:
+        actual_kill_switch = KillSwitch(
+            key=ks_key,
+            on_trigger=_on_kill_switch_triggered,
+            lab_mode=True,
+        )
+    else:
+        actual_kill_switch = KillSwitch(
+            key=ks_key,
+            on_trigger=_on_kill_switch_triggered,
+            lab_mode=False,
+        )
     mapper = ActionMapper(driver, delay=RealDelay())
     base_actuator = make_actuator(
         mode="LAB",
@@ -923,6 +983,7 @@ async def build_lab_runtime_async(
         telemetry_config=telemetry_config,
         session_events_total=0,
         perception_port=port,
+        kill_switch=actual_kill_switch,
     )
 
 
@@ -948,6 +1009,9 @@ def build_lab_runtime(
     reflex_loop: ReflexLoop | None = None,
     watchdog: WatchdogProcess | None = None,
     focus_backend: object | None = None,
+    kill_switch_backend: object | None = None,
+    kill_switch: KillSwitch | None = None,
+    live_mode: bool = False,
     llm_client: object | None = None,
 ) -> LabRuntime:
     """Synchronous builder wrapping build_lab_runtime_async via asyncio.run."""
@@ -985,6 +1049,9 @@ def build_lab_runtime(
             reflex_loop=reflex_loop,
             watchdog=watchdog,
             focus_backend=focus_backend,
+            kill_switch_backend=kill_switch_backend,
+            kill_switch=kill_switch,
+            live_mode=live_mode,
             llm_client=llm_client,
         )
     )
@@ -1384,6 +1451,20 @@ async def _run_cycle(
     bool,
 ]:
     """Execute a single farm loop cycle step."""
+    if runtime.safety.is_aborted():
+        return (
+            prev_goal,
+            cached_vendor,
+            True,
+            last_summary,
+            False,
+            "safety_aborted",
+            current_target,
+            current_strategy,
+            profile_node_index,
+            False,
+        )
+
     rcfg = runtime.config_snapshot.get("runner_config", {})
     sync_interval = int(rcfg.get("world_sync_interval_cycles", 1))
     sum_interval = int(rcfg.get("summarize_every_cycles", 5))
@@ -1710,11 +1791,25 @@ async def run_lab_loop_async(
         runtime.watchdog.start()
         managed_watchdog = True
 
+    managed_focus = False
+    if runtime.focus is not None:
+        runtime.focus.start()
+        managed_focus = True
+
+    managed_kill_switch = False
+    if runtime.kill_switch is not None:
+        runtime.kill_switch.start()
+        managed_kill_switch = True
+
     def _finalize_run(
         status: LabRunStatus,
         reason: str,
         shutdown_report: Any | None = None,
     ) -> LabRunResult:
+        if managed_kill_switch and runtime.kill_switch is not None:
+            runtime.kill_switch.stop()
+        if managed_focus and runtime.focus is not None:
+            runtime.focus.stop()
         if (
             managed_reflex
             and runtime.reflex_loop is not None
@@ -1979,6 +2074,10 @@ async def run_lab_loop_async(
     finally:
         with contextlib.suppress(Exception):
             runtime.driver.release_all()
+        if managed_kill_switch and runtime.kill_switch is not None:
+            runtime.kill_switch.stop()
+        if managed_focus and runtime.focus is not None:
+            runtime.focus.stop()
         if managed_port and runtime.perception_port is not None:
             runtime.perception_port.stop_pump()
         if (

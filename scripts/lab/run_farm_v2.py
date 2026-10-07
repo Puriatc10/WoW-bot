@@ -7,6 +7,7 @@ import argparse
 import asyncio
 import json
 import sys
+import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -162,12 +163,12 @@ def main(args: list[str] | None = None) -> int:
         sess_root = Path("./runs/lab")
         sess_root.mkdir(parents=True, exist_ok=True)
         config_obj = Config(
-            lab_mode=(parsed.mode == "LAB"),
+            lab_mode=True,
             server_allowlist=("127.0.0.1:8080",),
             isolation_sentinel="127.0.0.1:9999",
             kill_switch_key="F12",
             session_root=sess_root,
-            dry_run=(parsed.mode != "LAB"),
+            dry_run=False,
             max_session_seconds=3600,
             log_level="INFO",
         )
@@ -197,8 +198,8 @@ def main(args: list[str] | None = None) -> int:
         )
 
     if parsed.rotation is not None and parsed.rotation.exists():
-        with open(parsed.rotation, "r", encoding="utf-8") as f:
-            rot_data = json.load(f)
+        with open(parsed.rotation, "rb") as f:
+            rot_data = tomllib.load(f)
         rotation_cfg = load_rotation_from_dict(rot_data)
     else:
         rotation_cfg = RotationConfig(rules=())

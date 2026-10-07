@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Any, Protocol
 
@@ -25,6 +25,53 @@ class MetaStateLike(Protocol):
 
     drives: Mapping[str, float]
     memory_summary: str
+
+
+@dataclass
+class LabMetaStateAdapter:
+    """Minimal explicit LAB-safe adapter satisfying MetaStateLike for Strategist."""
+
+    drives: Mapping[str, float] = field(
+        default_factory=lambda: {
+            "hunger": 0.0,
+            "fatigue": 0.0,
+            "curiosity": 0.0,
+            "aggression": 0.0,
+            "social": 0.0,
+        }
+    )
+    memory_summary: str = "Operating in isolated lab environment."
+    recent_events: list[Any] = field(default_factory=list)
+    timestamp: float = 0.0
+
+    @classmethod
+    def from_meta_state(cls, meta: Any) -> LabMetaStateAdapter:
+        if meta is None:
+            return cls()
+        if isinstance(meta, LabMetaStateAdapter):
+            return meta
+        drives_val = getattr(meta, "drives", None)
+        if callable(drives_val):
+            drives_map = drives_val()
+        elif isinstance(drives_val, Mapping):
+            drives_map = dict(drives_val)
+        else:
+            drives_map = {
+                "hunger": float(getattr(meta, "drive_hunger", 0.0)),
+                "fatigue": float(getattr(meta, "drive_fatigue", 0.0)),
+                "curiosity": 0.0,
+                "aggression": 0.0,
+                "social": 0.0,
+            }
+        mem_sum = getattr(meta, "memory_summary", "Operating in isolated lab environment.")
+        events = getattr(meta, "recent_events", [])
+        ts = getattr(meta, "timestamp", 0.0)
+        return cls(
+            drives=drives_map,
+            memory_summary=str(mem_sum),
+            recent_events=list(events),
+            timestamp=float(ts),
+        )
 
 
 class GameStateView(Protocol):
@@ -180,15 +227,23 @@ def build_prompt(
     allowed_goals_text = "\n".join(goal_lines)
 
     # 3. drives
-    if meta.drives:
-        sorted_drives = sorted(meta.drives.items())
+    drives_val: Any = getattr(meta, "drives", None)
+    if callable(drives_val):
+        drives_map = drives_val()
+    elif isinstance(drives_val, Mapping):
+        drives_map = drives_val
+    else:
+        drives_map = None
+
+    if drives_map:
+        sorted_drives = sorted(drives_map.items())
         drive_lines = [f"  {k}: {v:.3f}" for k, v in sorted_drives]
         drives_text = "\n".join(drive_lines)
     else:
         drives_text = "  (no drives)"
 
     # 4. memory
-    mem_summary = meta.memory_summary or ""
+    mem_summary = getattr(meta, "memory_summary", "") or ""
     if not mem_summary:
         memory_text = "(none)"
     else:

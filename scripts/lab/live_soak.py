@@ -42,6 +42,7 @@ from wow_bot.perception.capture import ScreenCapture
 from wow_bot.perception.perception_config import load_perception_config
 from wow_bot.perception.real_backend import RealPerceptionBackend
 from wow_bot.session import Session
+from wow_bot.strategist import LabMetaStateAdapter
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -215,23 +216,25 @@ async def run_live_soak_async(
             )
             last_sample_time = now
 
-    runtime = await build_lab_runtime_async(
-        config=cfg,
-        session=session,
-        perception_backend=backend,
-        meta_state_source=lambda: None,
-        rotation_config=rotation,
-        farm_profile=profile,
-        world_db_path=str(world_db_path),
-        driver_name=driver_name,
-        window_title=window_title,
-        runner_config=LabRunnerConfig(
-            max_cycles_per_run=max_cycles,
-        ),
-        sleep=sampling_sleep,
-    )
-
+    runtime = None
     try:
+        runtime = await build_lab_runtime_async(
+            config=cfg,
+            session=session,
+            perception_backend=backend,
+            meta_state_source=lambda: LabMetaStateAdapter(timestamp=time.monotonic()),
+            rotation_config=rotation,
+            farm_profile=profile,
+            world_db_path=str(world_db_path),
+            driver_name=driver_name,
+            window_title=window_title,
+            runner_config=LabRunnerConfig(
+                max_cycles_per_run=max_cycles,
+            ),
+            sleep=sampling_sleep,
+            live_mode=True,
+        )
+
         run_res = await run_lab_loop_async(
             runtime,
             max_cycles=max_cycles,
@@ -239,7 +242,9 @@ async def run_live_soak_async(
         )
     finally:
         session.close("soak_complete")
-        await runtime.close()
+        if runtime is not None:
+            await runtime.close()
+        backend.close()
 
     # Build and write soak report
     crash = run_res.status in {
