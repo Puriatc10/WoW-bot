@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from wow_bot.combat.rotation import RotationConfig, load_rotation_from_dict
-from wow_bot.config import Config
+from wow_bot.config import Config, load_config
 from wow_bot.executor.states import FSMState
 from wow_bot.farm.profile import (
     CycleSpec,
@@ -125,6 +125,30 @@ def parse_args(args: list[str] | None = None) -> argparse.Namespace:
         default="MOCK",
         help="Execution mode (default: MOCK).",
     )
+    parser.add_argument(
+        "--real-perception",
+        action="store_true",
+        default=False,
+        help="Enable RealPerceptionBackend (LAB mode only, Phase 13).",
+    )
+    parser.add_argument(
+        "--perception-config",
+        type=Path,
+        default=None,
+        help="Path to perception configuration TOML file.",
+    )
+    parser.add_argument(
+        "--capture-region",
+        type=str,
+        default=None,
+        help="Optional screen capture ROI as 'left,top,width,height' for windowed mode.",
+    )
+    parser.add_argument(
+        "--monitor-idx",
+        type=int,
+        default=1,
+        help="Screen capture monitor index (default: 1).",
+    )
     return parser.parse_args(args)
 
 
@@ -132,19 +156,27 @@ def main(args: list[str] | None = None) -> int:
     """CLI entry point for running farm loop."""
     parsed = parse_args(args)
 
-    sess_root = Path("/tmp/runs/lab")
-    sess_root.mkdir(parents=True, exist_ok=True)
+    if parsed.config is not None and parsed.config.exists():
+        config_obj = load_config(parsed.config)
+    else:
+        sess_root = Path("./runs/lab")
+        sess_root.mkdir(parents=True, exist_ok=True)
+        config_obj = Config(
+            lab_mode=(parsed.mode == "LAB"),
+            server_allowlist=("127.0.0.1:8080",),
+            isolation_sentinel="127.0.0.1:9999",
+            kill_switch_key="F12",
+            session_root=sess_root,
+            dry_run=(parsed.mode != "LAB"),
+            max_session_seconds=3600,
+            log_level="INFO",
+        )
 
-    config_obj = Config(
-        lab_mode=True,
-        server_allowlist=["127.0.0.1:8080"],
-        isolation_sentinel="127.0.0.1:9999",
-        kill_switch_key="F12",
-        session_root=sess_root,
-        dry_run=False,
-        max_session_seconds=3600,
-        log_level="INFO",
-    )
+    if parsed.real_perception and (parsed.mode != "LAB" or not config_obj.lab_mode):
+        raise ValueError(
+            "Real perception (--real-perception) is strictly prohibited in MOCK mode. "
+            "Run with --mode LAB and lab_mode=true (AGENTS.md §3.2, LAB_PHASE_ROADMAP Global Rule 1)."
+        )
 
     if parsed.profile is not None and parsed.profile.exists():
         profile_obj = load_profile(parsed.profile)
@@ -173,6 +205,43 @@ def main(args: list[str] | None = None) -> int:
 
     session_obj = Session.start(config_obj)
 
+    perception_backend_obj = None
+    if parsed.real_perception:
+        from wow_bot.perception.capture import ScreenCapture
+        from wow_bot.perception.perception_config import load_perception_config
+        from wow_bot.perception.real_backend import RealPerceptionBackend
+
+        p_cfg_path = parsed.perception_config
+        if p_cfg_path is None:
+            if Path("config/perception.toml").exists():
+                p_cfg_path = Path("config/perception.toml")
+            else:
+                p_cfg_path = Path("config/perception.example.toml")
+        if not p_cfg_path.exists():
+            raise FileNotFoundError(f"Perception config file not found: {p_cfg_path}")
+
+        perception_cfg = load_perception_config(p_cfg_path)
+
+        cap_region: tuple[int, int, int, int] | None = None
+        if parsed.capture_region:
+            parts = [int(p.strip()) for p in parsed.capture_region.split(",")]
+            if len(parts) != 4:
+                raise ValueError("--capture-region must be formatted as 'left,top,width,height'")
+            cap_region = (parts[0], parts[1], parts[2], parts[3])
+
+        capture = ScreenCapture(
+            idle_fps=perception_cfg.idle_fps,
+            combat_fps=perception_cfg.combat_fps,
+            monitor_idx=parsed.monitor_idx,
+            region=cap_region,
+        )
+        base_dir = p_cfg_path.parent if (p_cfg_path.parent / "models").exists() else p_cfg_path.parent.parent
+        perception_backend_obj = RealPerceptionBackend.from_config(
+            perception_cfg,
+            capture=capture,
+            base_dir=base_dir,
+        )
+
     state_inst = SyntheticGameState()
     meta_inst = SyntheticMetaState()
 
@@ -190,7 +259,8 @@ def main(args: list[str] | None = None) -> int:
     runtime = build_lab_runtime(
         config=config_obj,
         session=session_obj,
-        game_state_source=moving_state_source,
+        game_state_source=None if perception_backend_obj is not None else moving_state_source,
+        perception_backend=perception_backend_obj,
         meta_state_source=lambda: meta_inst,
         rotation_config=rotation_cfg,
         farm_profile=profile_obj,

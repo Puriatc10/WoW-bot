@@ -69,10 +69,22 @@ Environment:
   - Private server on an isolated network
 
 Procedure:
-  To be defined in Phase 13.
+  1. Start private WoW server on an isolated network (no external internet routing).
+  2. Launch WoW client in windowed mode (calibrated resolution, UI scale 1.0).
+  3. Log in to character and position at farm profile starting node.
+  4. Run `python scripts/lab/verify_perception_calibration.py` to ensure Tesseract, templates, and ROIs match client geometry.
+  5. Start bot with `python scripts/lab/live_soak.py` or `scripts/lab/run_farm_v2.py --mode LAB --real-perception`.
+  6. Operator remains present with physical kill switch (F12) armed.
+  7. Session logs written to `runs/lab/<session_id>/`.
+  8. Analysis script generates `docs/RESULTS_REAL.md`.
 
 Metrics reported:
-  To be defined in Phase 13.
+  - Average frame capture FPS and latency (ms)
+  - OCR recognition latency and confidence distributions (pose, target name, level, panels)
+  - Template matching score distributions (bars, minimap arrow, bag slots)
+  - Farm cycle outcomes (nodes reached, enemies defeated, bags emptied, vendor visits)
+  - Reflex loop tick jitter and watchdog health transitions
+  - Actuation timing distribution vs humanizer target
 
 ## Non-Claims for the Phase 12 Soak
 

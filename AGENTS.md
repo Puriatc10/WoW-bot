@@ -79,7 +79,7 @@ Activated only when ALL of the following hold:
 - A `Session` has been opened with append-only logging.
 
 In LAB_MODE:
-- Perception: still `MockPerception` (per current roadmap).
+- Perception: `MockPerception` by default; `RealPerceptionBackend` / `PerceptionPort` permitted for live execution in Phase 13 when enabled via CLI/config.
 - Actuation: `RealActuator` (real OS input).
 - Reflex layer runs at 10-20 Hz.
 - Watchdog runs in behavioral mode.

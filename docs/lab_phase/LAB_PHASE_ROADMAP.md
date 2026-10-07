@@ -11,9 +11,10 @@ phases without updating this file.
 
 ## Global Rules (apply to every task)
 
-1. MockPerception MUST remain the only producer of `GameState` in this
-   roadmap. Its schema is frozen. Any task that touches perception MUST
-   NOT change the schema.
+1. MockPerception MUST remain the default producer of `GameState` in MOCK_MODE.
+   In LAB_MODE, RealPerceptionBackend (Phase 13) is permitted as an opt-in live producer
+   when explicitly enabled via CLI or configuration. The `GameState` schema remains frozen;
+   consumers MUST NOT branch on producer identity.
 2. Default mode is `MOCK_MODE`. `LAB_MODE` is opt-in and never runs in CI.
 3. No task may introduce OS input, screen capture, or network calls
    outside the modules designated for them.
@@ -44,6 +45,7 @@ phases without updating this file.
 | 10    | Reporting & Analysis v2     | Lab-grade reports and metrics         |
 | 11    | End-to-End Farm Loop        | Farm → loot → vendor → repair         |
 | 12    | Soak & Final Analysis       | 24-72h stability, RESULTS.md          |
+| 13    | Real Perception Live Soak   | Live perception, outcomes, RESULTS_REAL.md |
 
 ---
 
@@ -1458,6 +1460,39 @@ subsystems; it does not own the top-level loop.
 **Out of scope:**
 - Any real number before the operator's soak.
 - Any real-perception content.
+
+---
+
+# Phase 13 — Real Perception Live Soak
+
+**Goal:** Execute the full agent stack (`RealPerceptionBackend`, `RealActuator`,
+Reflex Loop, FSM, World Model, Navigation, Combat Engine, Strategist) in `LAB_MODE`
+against a private WoW game client on an isolated network.
+
+**Environment:**
+- `LAB_MODE=1`, `dry_run=False`
+- Real input driver (`pynput` or `interception`)
+- Physical kill switch armed (`kill_switch_key`, default `F12`)
+- Isolated private game server matching allowlist (no public internet)
+- Game client in windowed mode with calibrated UI scale (1.0)
+- `RealPerceptionBackend` acquiring frames via `ScreenCapture` (`mss`),
+  OCR via `tesseract.exe`, and template matching via OpenCV
+- Append-only session logs written to `runs/lab/<session_id>/`
+
+**Phase acceptance:**
+- RealPerception pipeline produces valid `GameState` snapshots at 10-20 Hz.
+- Fast reflex loop processes state without blocking or starvation.
+- Navigation traverses world graph based on OCR-observed player coordinates.
+- Combat engine triggers rotation upon detecting hostile target and combat flag.
+- Farm cycle progresses through nodes, resolves vendor upon full inventory, and
+  executes recovery on stuck conditions.
+- Emergency kill switch immediately ceases all input actuation and aborts cleanly.
+- `docs/RESULTS_REAL.md` created with empirical metrics from the live soak run.
+
+**Out of scope:**
+- Any public/retail server connection (strictly forbidden by `LAB_CONSTRAINTS.md`).
+- Memory reading, DLL injection, or anti-cheat tampering.
+
 
 ---
 

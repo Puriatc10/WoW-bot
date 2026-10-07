@@ -144,6 +144,7 @@ class ScreenCapture:
         *,
         monitor_idx: int = 1,
         pool_size: int = 5,
+        region: dict[str, int] | tuple[int, int, int, int] | None = None,
     ) -> None:
         if idle_fps <= 0 or combat_fps <= 0:
             raise ValueError("idle_fps and combat_fps must be > 0")
@@ -154,6 +155,7 @@ class ScreenCapture:
         self.current_fps = self.idle_fps
         self.monitor_idx = int(monitor_idx)
         self.pool_size = int(pool_size)
+        self._region = region
         self.running = False
         self.pool: list[FrameLike] = []
         self.pool_idx = 0
@@ -187,7 +189,25 @@ class ScreenCapture:
                 f"monitor_idx {self.monitor_idx} out of range; "
                 f"{len(monitors)} monitors reported by mss"
             )
-        self._monitor = dict(monitors[self.monitor_idx])
+        if self._region is not None:
+            if isinstance(self._region, dict):
+                self._monitor = {
+                    "top": int(self._region["top"]),
+                    "left": int(self._region["left"]),
+                    "width": int(self._region["width"]),
+                    "height": int(self._region["height"]),
+                }
+            elif isinstance(self._region, (tuple, list)) and len(self._region) == 4:
+                self._monitor = {
+                    "left": int(self._region[0]),
+                    "top": int(self._region[1]),
+                    "width": int(self._region[2]),
+                    "height": int(self._region[3]),
+                }
+            else:
+                raise TypeError("region must be a dict with top/left/width/height or a 4-tuple")
+        else:
+            self._monitor = dict(monitors[self.monitor_idx])
         height = int(self._monitor["height"])
         width = int(self._monitor["width"])
         self.pool = [
